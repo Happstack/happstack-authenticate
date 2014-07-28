@@ -1,0 +1,61 @@
+Name:                happstack-authenticate
+Version:             2.0.0
+Synopsis:            Happstack Authentication Library
+Description:         A themeable authentication library with support for username+password and OpenId.
+Homepage:            http://www.happstack.com/
+License:             BSD3
+License-file:        LICENSE
+Author:              Jeremy Shaw.
+Maintainer:          jeremy@seereason.com
+Copyright:           2011 SeeReason Partners, LLC
+Category:            Web
+Build-type:          Simple
+Cabal-version:       >=1.6
+
+
+source-repository head
+    type:     darcs
+    subdir:   happstack-authenticate
+    location: http://hub.darcs.net/stepcut/happstack
+
+
+Library
+  Exposed-modules:     Happstack.Authenticate.Core
+                       Happstack.Authenticate.Password.Core
+                       Happstack.Authenticate.Password.Forms
+
+  Build-depends:       base                         > 4 && < 5,
+                       acid-state                   >= 0.6 && <= 0.13,
+                       aeson                        >= 0.4 && < 0.8,
+                       authenticate                 == 1.3.*,
+                       base64-bytestring            >= 1.0 && < 1.1,
+                       blaze-html                   >= 0.5 && < 0.8,
+                       boomerang                    >= 1.4 && < 1.5,
+                       bytestring                   >= 0.9 && < 0.11,
+                       containers                   >= 0.4 && < 0.6,
+                       data-default                 >= 0.5 && < 0.6,
+                       filepath                     >= 1.3 && < 1.4,
+                       jmacro                       >= 0.6 && < 0.7,
+                       jwt                          >= 0.3 && < 0.4,
+                       ixset-typed                  >= 0.2 && < 0.3,
+                       happstack-server             >= 6.0 && < 7.4,
+                       http-conduit                 >= 1.4 && < 2.2,
+                       http-types                   >= 0.6 && < 0.9,
+                       hsx-jmacro                   >= 7.3 && < 7.4,
+                       fb                           >= 0.13 && < 1.1,
+                       safecopy                     >= 0.6,
+                       mtl                          >= 2.0,
+                       lens                         >= 4.2 && < 4.3,
+                       pwstore-purehaskell          == 2.1.*,
+                       QuickCheck                   >= 2,
+                       text                         >= 0.11 && < 1.2,
+                       time                         >= 1.2 && < 1.5,
+                       random                       >= 1.0 && < 1.1,
+                       reform                       == 0.2.*,
+--                       reform-blaze                 == 0.2.*,
+                       reform-happstack             == 0.2.*,
+                       unordered-containers         == 0.2.*,
+                       web-routes                   >= 0.26 && < 0.28,
+                       web-routes-boomerang         >= 0.28 && < 0.29,
+                       web-routes-happstack         == 0.23.*,
+                       web-routes-th                >= 0.22 && < 0.23
