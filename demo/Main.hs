@@ -135,8 +135,17 @@ demoAppJs = [jmacro|
   {
     var demoApp = angular.module('demoApp', [
       'happstackAuthentication',
-      'usernamePassword'
+      'usernamePassword',
+      'ngRoute'
     ]);
+
+    demoApp.config(['$routeProvider',
+      function($routeProvider) {
+        $routeProvider.when('/resetPassword',
+                             { templateUrl: '/authenticate/authentication-methods/password/partial/reset-password-form',
+                               controller: 'UsernamePasswordCtrl'
+                             });
+      }]);
 
     demoApp.controller('DemoAppCtrl', ['$scope', '$http',function($scope, $http) {
       $scope.message = '';
@@ -182,31 +191,55 @@ index = do
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
         <script src="/bootstrap/js/bootstrap.min.js"></script>
         <script src="/js/angular.min.js"></script>
+        <script src="/js/angular-route.min.js"></script>
         <script src=(routeFn DemoAppJs [])></script>
         <script src=(routeFn UsernamePasswordJs [])></script>
       </head>
-      <body ng-app="demoApp">
+      <body ng-app="demoApp" ng-controller="UsernamePasswordCtrl">
+       <nav class="navbar navbar-default" role="navigation">
+         <div class="container-fluid">
+            <up-login-inline />
+         </div>
+       </nav>
+
        <div class="container-fluid">
-       <div class="row">
-       <div class="col-md-12">
-        <div ng-controller="UsernamePasswordCtrl">
---         <% mapXMLGenT (nestURL Authenticate) usernamePasswordForm %>
-         <up-login-inline />
-         <div up-authenticated=False>
-          <p>Not Authenticated</p>
+         <div class="row">
+           <div class="col-md-12">
+             <div ng-view=""></div>
+           </div>
          </div>
-         <div up-authenticated=True>
-          <p>Authenticated</p>
+         <div class="row">
+           <div class="col-md-3"></div>
+           <div class="col-md-6">
+             <div>
+               <h1>Happstack Authentication Demo</h1>
+               <div up-authenticated=False>
+                 <p>This is a demonstration of the <code>happstack-authentication</code> library. You are currently not logged in.</p>
+
+                 <p>If you don't have an account already you can signup:</p>
+                 <up-signup-password />
+
+                 <p>If you have forgotten your password you can request it to be sent to your email address:</p>
+                 <up-request-reset-password />
+               </div>
+
+               <div up-authenticated=True>
+                 <p>You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout</a>. Or you can change your password here:</p>
+
+                 <up-change-password />
+
+                 <p>You can also now access restricted content.</p>
+
+                 <div ng-controller="DemoAppCtrl">
+                   <a ng-click=("callRestricted('" <> (routeFn (Api Restricted) []) <> "')") href="">Shh, this is private!</a>
+                   <br />
+                   <div>{{message}}</div>
+                 </div>
+               </div>
+             </div>
+           </div>
+           <div class="col-md-3"></div>
          </div>
-         <up-change-password />
-         <div ng-controller="DemoAppCtrl">
-          <a ng-click=("callRestricted('" <> (routeFn (Api Restricted) []) <> "')") href="">Shh, this is private!</a>
-          <br />
-          <div>{{message}}</div>
-         </div>
-        </div>
-       </div>
-       </div>
        </div>
       </body>
     </html>
@@ -214,7 +247,7 @@ index = do
 
 main :: IO ()
 main =
-  do (cleanup, routeAuthenticate, authenticateState) <- initAuthentication Nothing [initPassword]
+  do (cleanup, routeAuthenticate, authenticateState) <- initAuthentication Nothing [initPassword "http://localhost:8000/#resetPassword" "example.org"]
      (simpleHTTP nullConf $
       msum [ dir "js"        $ serveDirectory EnableBrowsing [] "js"
            , dir "bootstrap" $ serveDirectory EnableBrowsing [] "bootstrap"

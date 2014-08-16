@@ -12,15 +12,21 @@ import Web.Routes.Boomerang                 (Router, (:-), (<>), boomerangFromPa
 
 data PartialURL
   = LoginInline
+  | SignupPassword
   | ChangePassword
+  | RequestResetPasswordForm
+  | ResetPasswordForm
   deriving (Eq, Ord, Data, Typeable, Generic)
 
 makeBoomerangs ''PartialURL
 
 partialURL :: Router () (PartialURL :- ())
 partialURL =
-  (  "login-inline"    . rLoginInline
-  <> "change-password" . rChangePassword
+  (  "login-inline"         . rLoginInline
+  <> "signup-password"      . rSignupPassword
+  <> "change-password"      . rChangePassword
+  <> "reset-password-form"  . rResetPasswordForm
+  <> "request-reset-password-form"  . rRequestResetPasswordForm
   )
 
 instance PathInfo PartialURL where

@@ -4,8 +4,8 @@ module Happstack.Authenticate.Password.Controllers where
 import Data.Text                            (Text)
 import qualified Data.Text                  as T
 import Happstack.Authenticate.Core          (AuthenticateURL)
-import Happstack.Authenticate.Password.URL (PasswordURL(Token, Partial), nestPasswordURL)
-import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, LoginInline))
+import Happstack.Authenticate.Password.URL (PasswordURL(Account, Token, Partial, PasswordReset, PasswordRequestReset), nestPasswordURL)
+import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, LoginInline, SignupPassword, RequestResetPasswordForm))
 import Language.Javascript.JMacro
 import Web.Routes
 
@@ -78,7 +78,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
 
     var usernamePassword = angular.module('usernamePassword', ['happstackAuthentication']);
 
-    usernamePassword.controller('UsernamePasswordCtrl', ['$scope','$http','$window', 'userService', function ($scope, $http, $window, userService) {
+    usernamePassword.controller('UsernamePasswordCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
       $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
       $scope.login = function () {
@@ -118,23 +118,61 @@ usernamePasswordCtrlJs showURL = [jmacro|
         $scope.isAuthenticated = false;
       };
 
+      $scope.signupPassword = function () {
+        $scope.signup.naUser.userId = 0;
+        $http.
+          post(`(showURL (Account Nothing) [])`, $scope.signup).
+          success(function (datum, status, headers, config) {
+            $scope.signup_error = 'Account Created';
+            $scope.signup = {};
+          }).
+          error(function (datum, status, headers, config) {
+            $scope.signup_error = 'Error: ' + JSON.stringify(datum);
+          });
+      };
+
       $scope.changePassword = function (url) {
         var u = userService.getUser();
         if (u.isAuthenticated) {
           $http.
             post(url, $scope.password).
             success(function (datum, status, headers, config) {
-              alert('success!' + datum);
+            $scope.change_password_error = 'Password Changed.';
+            $scope.password = {};
           }).
           error(function (datum, status, headers, config) {
-              alert('failure!' + datum);
+            $scope.change_password_error = 'Error: ' + JSON.stringify(datum);
           });
         } else {
-          alert('not authenticated.');
+            $scope.change_password_error = 'Not Authenticated.';
         }
       };
 
+      $scope.requestResetPassword = function () {
+        $http.post(`(showURL PasswordRequestReset [])`, $scope.requestReset).
+          success(function (datum, status, headers, config) {
+            $scope.request_reset_password_msg = datum;
+          }).
+          error(function (datum, status, headers, config) {
+            $scope.request_reset_password_msg = datum;
+          });
+      };
 
+      $scope.resetPassword = function () {
+        var resetToken = $location.search().reset_token;
+        if (resetToken) {
+          $scope.reset.rpResetToken = resetToken;
+          $http.post(`(showURL PasswordReset [])`, $scope.reset).
+            success(function (datum, status, headers, config) {
+              $scope.reset_password_msg = datum;
+            }).
+            error(function (datum, status, headers, config) {
+              $scope.reset_password_msg = datum;
+            });
+        } else {
+          $scope.reset_password_msg = "reset token not found.";
+        }
+      };
 
     }]);
 
@@ -198,10 +236,9 @@ usernamePasswordCtrlJs showURL = [jmacro|
                                 $http.get(`(showURL (Partial ChangePassword) [])`).
                                   success(function(datum, status, headers, config) {
                                     element.empty();
-                                    var newElem = angular.element("<p>got server data. {{isAuthenticated}}</p>" + datum);
+                                    var newElem = angular.element(datum);
                                     element.append(newElem);
                                     $compile(newElem)(scope);
-
                                   });
                               } else {
                                 element.empty();
@@ -223,6 +260,24 @@ usernamePasswordCtrlJs showURL = [jmacro|
         templateUrl: `(showURL (Partial ChangePassword) [])`
       };
 */
+    }]);
+
+
+    // upResetPassword directive
+    usernamePassword.directive('upRequestResetPassword', [function () {
+      return {
+        restrict: 'E',
+//        replace: true,
+        templateUrl: `(showURL (Partial RequestResetPasswordForm) [])`
+      };
+    }]);
+
+    usernamePassword.directive('upSignupPassword', [function () {
+      return {
+        restrict: 'E',
+//        replace: true,
+        templateUrl: `(showURL (Partial SignupPassword) [])`
+      };
     }]);
 
 

@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
 module Happstack.Authenticate.Password.Core where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), optional)
 import Control.Monad.Trans (MonadIO(..))
 import Control.Lens  ((?~), (^.), (.=), (?=), assign, makeLenses, set, use, view, over)
 import Control.Lens.At (at)
@@ -10,25 +10,35 @@ import Crypto.PasswordStore          (genSaltIO, exportSalt, makePassword)
 import Data.Acid          (AcidState, Query, Update, closeAcidState, makeAcidic)
 import Data.Acid.Advanced (query', update')
 import Data.Acid.Local    (createCheckpointAndClose, openLocalStateFrom)
-import Data.Aeson         (Value(..), Object(..), decode, encode)
+import qualified Data.Aeson as Aeson
+import Data.Aeson         (Value(..), Object(..), Result(..), decode, encode, fromJSON)
 import Data.Aeson.Types   (ToJSON(..), FromJSON(..), Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as B
 import Data.Data (Data, Typeable)
 import qualified Data.HashMap.Strict as HashMap
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe         (fromMaybe)
+import Data.Maybe         (fromMaybe, fromJust)
+import Data.Monoid        ((<>))
 import Data.SafeCopy (SafeCopy, base, deriveSafeCopy)
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
+import qualified Data.Text.Lazy     as LT
+import Data.Time.Clock.POSIX          (getPOSIXTime)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), UserId(..), User(..), Username(..), getToken, issueToken, jsonOptions, userId, username, toJSONResponse)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
+import Network.HTTP.Types              (toQuery, renderQuery)
+import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail)
 import System.FilePath                 (combine)
+import qualified Web.JWT               as JWT
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secret, secondsSinceEpoch, verify)
 import Web.Routes
 import Web.Routes.TH
 
@@ -41,8 +51,13 @@ data PasswordError
   | URLDecodeFailed
   | NotAuthenticated
   | NotAuthorized
+  | InvalidUsername
   | InvalidPassword
   | InvalidUsernamePassword
+  | NoEmailAddress
+  | MissingResetToken
+  | InvalidResetToken
+  | PasswordMismatch
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   PasswordError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
@@ -159,7 +174,6 @@ instance ToJExpr UserPass where
 -- token
 ------------------------------------------------------------------------------
 
-
 token :: (Happstack m) =>
          AcidState AuthenticateState
       -> AcidState PasswordState
@@ -167,7 +181,7 @@ token :: (Happstack m) =>
 token authenticateState passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
-     case decode body of
+     case Aeson.decode body of
        Nothing   -> badRequest $ toJSONResponse JSONDecodeFailed
        (Just (UserPass username password)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
@@ -187,8 +201,9 @@ token authenticateState passwordState =
 
 -- | JSON record for new account data
 data NewAccountData = NewAccountData
-    { _naUser     :: User
-    , _naPassword :: Text
+    { _naUser            :: User
+    , _naPassword        :: Text
+    , _naPasswordConfirm :: Text
     }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 makeLenses ''NewAccountData
@@ -216,7 +231,7 @@ account :: (Happstack m) =>
 account authenticateState passwordState Nothing =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
-     case decode body of
+     case Aeson.decode body of
        Nothing               -> badRequest (Left JSONDecodeFailed)
        (Just newAccount) ->
          do user <- update' authenticateState (CreateUser $ _naUser newAccount)
@@ -239,8 +254,8 @@ account authenticateState passwordState (Just (uid, url)) =
                       case mBody of
                         Nothing     -> badRequest (Left JSONDecodeFailed)
                         (Just (Body body)) ->
-                          case decode body of
-                            Nothing -> do liftIO $ print body
+                          case Aeson.decode body of
+                            Nothing -> do -- liftIO $ print body
                                           badRequest (Left JSONDecodeFailed)
                             (Just changePassword) ->
                               do b <- verifyPassword authenticateState passwordState (u ^. username) (changePassword ^. cpOldPassword)
@@ -249,3 +264,159 @@ account authenticateState passwordState (Just (uid, url)) =
                                    else do pw <- mkHashedPass (changePassword ^. cpNewPassword)
                                            update' passwordState (SetPassword uid pw)
                                            ok $ (Right uid)
+
+------------------------------------------------------------------------------
+-- passwordReset
+------------------------------------------------------------------------------
+
+-- | JSON record for new account data
+data RequestResetPasswordData = RequestResetPasswordData
+    { _rrpUsername :: Username
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''RequestResetPasswordData
+instance ToJSON   RequestResetPasswordData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON jsonOptions
+
+-- | request reset password
+passwordRequestReset :: (Happstack m) =>
+                        Text
+                     -> Text
+                     -> AcidState AuthenticateState
+                     -> AcidState PasswordState
+                     -> m (Either PasswordError Text)
+passwordRequestReset resetLink domain authenticateState passwordState =
+  do method POST
+     (Just (Body body)) <- takeRequestBody =<< askRq
+     case Aeson.decode body of
+       Nothing   -> badRequest $ Left JSONDecodeFailed
+       (Just (RequestResetPasswordData username)) ->
+         do mUser <- query' authenticateState (GetUserByUsername username)
+            case mUser of
+              Nothing     -> notFound $ Left InvalidUsername
+              (Just user) ->
+                case user ^. email of
+                  Nothing -> return $ Left NoEmailAddress
+                  (Just toEm) ->
+                    do eResetToken <- issueResetToken authenticateState user
+                       case eResetToken of
+                         (Left err) -> return (Left err)
+                         (Right resetToken) ->
+                           do let resetLink' = resetLink <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
+                              liftIO $ Text.putStrLn resetLink'
+                              sendResetEmail toEm (Email ("no-rneplay@" <> domain)) resetLink'
+                              return (Right "password reset request email sent.") -- FIXME: I18N
+
+-- | issueResetToken
+issueResetToken :: (MonadIO m) =>
+                   AcidState AuthenticateState
+                -> User
+                -> m (Either PasswordError JWT.JSON)
+issueResetToken authenticateState user =
+  case user ^. email of
+    Nothing     -> return (Left NoEmailAddress)
+    (Just addr) ->
+      do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
+         -- FIXME: add expiration time
+         now <- liftIO getPOSIXTime
+         let claims = JWT.def { unregisteredClaims = Map.singleton "reset-password" (toJSON user)
+                              , JWT.exp            = intDate $ now + 60
+                              }
+         return $ Right $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
+
+-- FIXME: I18N
+-- FIXME: call renderSendMail
+sendResetEmail :: (MonadIO m) =>
+                  Email
+               -> Email
+               -> Text
+               -> m ()
+sendResetEmail (Email toEm) (Email fromEm) resetLink = liftIO $
+  do mailBS <- renderMail' $ simpleMail' (Address Nothing toEm)  (Address (Just "no-reply") fromEm) "Reset Password Request" (LT.fromStrict resetLink)
+     B.putStr mailBS
+
+-- | JSON record for new account data
+data ResetPasswordData = ResetPasswordData
+    { _rpPassword        :: Text
+    , _rpPasswordConfirm :: Text
+    , _rpResetToken      :: Text
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''ResetPasswordData
+instance ToJSON   ResetPasswordData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON ResetPasswordData where parseJSON = genericParseJSON jsonOptions
+
+passwordReset :: (Happstack m) =>
+                 AcidState AuthenticateState
+              -> AcidState PasswordState
+              -> m (Either PasswordError ())
+passwordReset authenticateState passwordState =
+  do method POST
+     (Just (Body body)) <- takeRequestBody =<< askRq
+     case Aeson.decode body of
+       Nothing -> badRequest $ Left JSONDecodeFailed
+       (Just (ResetPasswordData password passwordConfirm resetToken)) ->
+         do mUser <- decodeAndVerifyResetToken authenticateState resetToken
+            case mUser of
+              Nothing     -> return (Left InvalidResetToken)
+              (Just (user, _)) ->
+                if password /= passwordConfirm
+                then return (Left PasswordMismatch)
+                else do pw <-  mkHashedPass password
+                        update' passwordState (SetPassword (user ^. userId) pw)
+                        ok $ Right ()
+
+         {-
+         do mTokenTxt <- optional $ queryString $ lookText' "reset_btoken"
+            case mTokenTxt of
+              Nothing -> badRequest $ Left MissingResetToken
+              (Just tokenTxt) ->
+                do mUser <- decodeAndVerifyResetToken authenticateState tokenTxt
+                   case mUser of
+                     Nothing     -> return (Left InvalidResetToken)
+                     (Just (user, _)) ->
+                       if password /= passwordConfirm
+                       then return (Left PasswordMismatch)
+                       else do pw <-  mkHashedPass password
+                               update' passwordState (SetPassword (user ^. userId) pw)
+                               ok $ Right ()
+--         ok $ Right $ Text.pack $ show (password, passwordConfirm)
+-}
+
+  {-
+  do mToken <- optional <$> queryString $ lookText "token"
+     case mToken of
+       Nothing      -> return (Left MissingResetToken)
+       (Just token) ->
+         do method GET
+-}
+
+decodeAndVerifyResetToken :: (MonadIO m) =>
+                             AcidState AuthenticateState
+                          -> Text
+                          -> m (Maybe (User, JWT VerifiedJWT))
+decodeAndVerifyResetToken authenticateState token =
+  do let mUnverified = JWT.decode token
+     case mUnverified of
+       Nothing -> return Nothing
+       (Just unverified) ->
+         case Map.lookup "reset-password" (unregisteredClaims (claims unverified)) of
+           Nothing -> return Nothing
+           (Just uv) ->
+             case fromJSON uv of
+               (Error _) -> return Nothing
+               (Success u) ->
+                 do mssecret <- query' authenticateState (GetSharedSecret (u ^. userId))
+                    case mssecret of
+                      Nothing -> return Nothing
+                      (Just ssecret) ->
+                        case verify (secret (_unSharedSecret ssecret)) unverified of
+                          Nothing -> return Nothing
+                          (Just verified) ->
+                            do now <- liftIO getPOSIXTime
+                               case JWT.exp (claims verified) of
+                                 Nothing -> return Nothing
+                                 (Just exp') ->
+                                   if (now > secondsSinceEpoch exp')
+                                   then return Nothing
+                                   else return (Just (u, verified))

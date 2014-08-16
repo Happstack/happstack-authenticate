@@ -183,7 +183,7 @@ type UserIxs = '[UserId, Username, Email]
 type IxUser  = IxSet UserIxs User
 
 instance Indexable UserIxs User where
-    empty = mkEmpty
+    indices = ixList
              (ixFun $ (:[]) . view userId)
              (ixFun $ (:[]) . view username)
              (ixFun $ maybeToList . view email)
@@ -257,7 +257,7 @@ setSharedSecret :: UserId
 setSharedSecret userId sharedSecret =
   sharedSecrets . at userId ?= sharedSecret
 
--- | get the 'SharedSecret' for 'UserI'd
+-- | get the 'SharedSecret' for 'UserId'
 getSharedSecret :: UserId
                 -> Query AuthenticateState (Maybe SharedSecret)
 getSharedSecret userId =
@@ -348,22 +348,34 @@ makeAcidic ''AuthenticateState
     ]
 
 ------------------------------------------------------------------------------
+-- Shared Secret Functions
+------------------------------------------------------------------------------
+
+-- | get the 'SharedSecret' for 'UserId'. Generate one if they don't have one yet.
+getOrGenSharedSecret :: (MonadIO m) =>
+                        AcidState AuthenticateState
+                     -> UserId
+                     -> m (SharedSecret)
+getOrGenSharedSecret authenticateState uid =
+ do mSSecret <- query' authenticateState (GetSharedSecret uid)
+    case mSSecret of
+      (Just ssecret) -> return ssecret
+      Nothing -> do
+        ssecret <- genSharedSecret
+        update' authenticateState (SetSharedSecret uid ssecret)
+        return ssecret
+
+------------------------------------------------------------------------------
 -- Token Functions
 ------------------------------------------------------------------------------
+
 
 issueToken :: (MonadIO m) =>
               AcidState AuthenticateState
            -> User
            -> m Text
 issueToken authenticateState user =
-  do ssecret <- do
-       mSSecret <- query' authenticateState (GetSharedSecret (_userId user))
-       case mSSecret of
-         (Just ssecret) -> return ssecret
-         Nothing -> do
-           ssecret <- genSharedSecret
-           update' authenticateState (SetSharedSecret (_userId user) ssecret)
-           return ssecret
+  do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
      let claims = def { unregisteredClaims = Map.fromList [("user", toJSON user)] }
      return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 

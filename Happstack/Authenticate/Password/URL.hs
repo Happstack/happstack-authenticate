@@ -33,7 +33,7 @@ makeBoomerangs ''AccountURL
 
 accountURL :: Router () (AccountURL :- ())
 accountURL =
-  ( rPassword . "password"
+  (  rPassword      . "password"
   )
 
 instance PathInfo AccountURL where
@@ -48,6 +48,8 @@ data PasswordURL
   = Token
   | Account (Maybe (UserId, AccountURL))
   | Partial PartialURL
+  | PasswordRequestReset
+  | PasswordReset
   deriving (Eq, Ord, Data, Typeable, Generic)
 
 makeBoomerangs ''PasswordURL
@@ -57,6 +59,8 @@ passwordURL =
   (  "token"   . rToken
   <> "account" </> rAccount . rMaybe (rPair . (rUserId . integer) </> accountURL)
   <> "partial" </> rPartial . partialURL
+  <> "password-request-reset" . rPasswordRequestReset
+  <> "password-reset"         . rPasswordReset
   )
 
 instance PathInfo PasswordURL where
