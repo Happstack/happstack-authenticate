@@ -76,11 +76,14 @@ import System.FilePath                 (combine)
 import System.IO                       (IOMode(ReadMode), withFile)
 import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
+import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secret, verify)
 import Web.Routes                      (RouteT, PathInfo(..), nestURL)
 import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
+
+data HappstackAuthenticateI18N = HappstackAuthenticateI18N
 
 {-
 -- | an 'AuthId' uniquely identifies an authentication.
@@ -103,8 +106,12 @@ jsonOptions :: Options
 jsonOptions = defaultOptions { fieldLabelModifier = drop 1 }
 
 -- | convert a value to a JSON encoded 'Response'
-toJSONResponse :: (ToJSON a) => a -> Response
-toJSONResponse a = toResponseBS "application/json" (A.encode a)
+toJSONResponse :: (RenderMessage HappstackAuthenticateI18N e, ToJSON a) => Either e a -> Response
+toJSONResponse (Left e) = toResponseBS "application/json" (A.encode (A.object ["error" A..= renderMessage HappstackAuthenticateI18N ["en"] e]))
+toJSONResponse (Right a) = toResponseBS "application/json" (A.encode a)
+
+toJSONError :: forall e. (RenderMessage HappstackAuthenticateI18N e) => e -> Response
+toJSONError e = toJSONResponse ((Left e) :: Either e ())
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -523,13 +530,15 @@ nestAuthenticationMethod authenticationMethod =
 ------------------------------------------------------------------------------
 
 data CoreError
-  = HandlerNotFound AuthenticationMethod
+  = HandlerNotFound -- AuthenticationMethod
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
 
 instance ToJExpr CoreError where
     toJExpr = toJExpr . toJSON
+
+mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
 
 ------------------------------------------------------------------------------
 -- route
@@ -543,7 +552,7 @@ route authenticationHandlers url =
     (AuthenticationMethods (Just (authenticationMethod, pathInfo))) ->
       case Map.lookup authenticationMethod authenticationHandlers of
         (Just handler) -> handler pathInfo
-        Nothing        -> notFound $ toJSONResponse (HandlerNotFound authenticationMethod)
+        Nothing        -> notFound $ toJSONError (HandlerNotFound {- authenticationMethod-} ) --FIXME
 
 ------------------------------------------------------------------------------
 -- initAuthenticate

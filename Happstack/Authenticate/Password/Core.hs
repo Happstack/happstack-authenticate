@@ -29,7 +29,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N, SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -37,6 +37,7 @@ import Language.Javascript.JMacro
 import Network.HTTP.Types              (toQuery, renderQuery)
 import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail)
 import System.FilePath                 (combine)
+import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secret, secondsSinceEpoch, verify)
 import Web.Routes
@@ -64,6 +65,8 @@ instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
 
 instance ToJExpr PasswordError where
     toJExpr = toJExpr . toJSON
+
+mkMessageFor "HappstackAuthenticateI18N" "PasswordError" "messages/password" ("en")
 
 ------------------------------------------------------------------------------
 -- HashedPass
@@ -182,15 +185,15 @@ token authenticateState passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
-       Nothing   -> badRequest $ toJSONResponse JSONDecodeFailed
+       Nothing   -> badRequest $ toJSONError JSONDecodeFailed
        (Just (UserPass username password)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
             case mUser of
-              Nothing -> forbidden $ toJSONResponse InvalidPassword
+              Nothing -> forbidden $ toJSONError InvalidPassword
               (Just u) ->
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
-                     then unauthorized $ toJSONResponse InvalidUsernamePassword
+                     then unauthorized $ toJSONError InvalidUsernamePassword
                      else do token <- issueToken authenticateState u
 --                             resp 201 $ toJSONResponse $ (Right $ Object $ HashMap.fromList [("token", toJSON token)])
                              resp 201 $ toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
@@ -228,6 +231,7 @@ account :: (Happstack m) =>
         -> Maybe (UserId, AccountURL)
         -> m (Either PasswordError UserId)
 -- handle new account creation via POST to /account
+-- FIXME: check that password and password confirmation match
 account authenticateState passwordState Nothing =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq

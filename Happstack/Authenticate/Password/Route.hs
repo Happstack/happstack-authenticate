@@ -4,7 +4,7 @@ import Control.Applicative ((<$>))
 import Data.Acid          (AcidState, closeAcidState, makeAcidic)
 import Data.Acid.Local    (createCheckpointAndClose, openLocalStateFrom)
 import Data.Text          (Text)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateState, AuthenticateURL, toJSONResponse)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateState, AuthenticateURL, toJSONError, toJSONResponse)
 import Happstack.Authenticate.Password.Core (PasswordError(..), PasswordState, account, initialPasswordState, passwordReset, passwordRequestReset, token)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
 import Happstack.Authenticate.Password.Partials (routePartial)
@@ -26,7 +26,7 @@ routePassword :: (Happstack m) =>
               -> RouteT AuthenticateURL m Response
 routePassword resetLink domain authenticateState passwordState pathSegments =
   case parseSegments fromPathSegments pathSegments of
-    (Left _) -> notFound $ toJSONResponse URLDecodeFailed
+    (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
       case url of
         Token   -> token authenticateState passwordState

@@ -127,7 +127,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
             $scope.signup = {};
           }).
           error(function (datum, status, headers, config) {
-            $scope.signup_error = 'Error: ' + JSON.stringify(datum);
+            $scope.signup_error = datum.error;
           });
       };
 
@@ -141,7 +141,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
             $scope.password = {};
           }).
           error(function (datum, status, headers, config) {
-            $scope.change_password_error = 'Error: ' + JSON.stringify(datum);
+            $scope.change_password_error = datum.error;
           });
         } else {
             $scope.change_password_error = 'Not Authenticated.';
@@ -154,7 +154,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
             $scope.request_reset_password_msg = datum;
           }).
           error(function (datum, status, headers, config) {
-            $scope.request_reset_password_msg = datum;
+            $scope.request_reset_password_msg = datum.error;
           });
       };
 
@@ -167,7 +167,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
               $scope.reset_password_msg = datum;
             }).
             error(function (datum, status, headers, config) {
-              $scope.reset_password_msg = datum;
+              $scope.reset_password_msg = datum.error;
             });
         } else {
           $scope.reset_password_msg = "reset token not found.";
