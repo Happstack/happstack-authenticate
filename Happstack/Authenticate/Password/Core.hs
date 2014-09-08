@@ -66,7 +66,7 @@ instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
 instance ToJExpr PasswordError where
     toJExpr = toJExpr . toJSON
 
-mkMessageFor "HappstackAuthenticateI18N" "PasswordError" "messages/password" ("en")
+mkMessageFor "HappstackAuthenticateI18N" "PasswordError" "messages/password/error" ("en")
 
 ------------------------------------------------------------------------------
 -- HashedPass
@@ -307,7 +307,7 @@ passwordRequestReset resetLink domain authenticateState passwordState =
                          (Left err) -> return (Left err)
                          (Right resetToken) ->
                            do let resetLink' = resetLink <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
-                              liftIO $ Text.putStrLn resetLink'
+                              liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
                               sendResetEmail toEm (Email ("no-rneplay@" <> domain)) resetLink'
                               return (Right "password reset request email sent.") -- FIXME: I18N
 

@@ -109,7 +109,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
             $scope.isAuthenticated = false;
 
             // Handle login errors here
-            $scope.username_password_error = 'Error: Invalid user or password';
+            $scope.username_password_error = datum.error;
           });
       };
 
@@ -123,7 +123,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
         $http.
           post(`(showURL (Account Nothing) [])`, $scope.signup).
           success(function (datum, status, headers, config) {
-            $scope.signup_error = 'Account Created';
+            $scope.signup_error = 'Account Created'; // FIXME -- I18N
             $scope.signup = {};
           }).
           error(function (datum, status, headers, config) {
@@ -137,14 +137,14 @@ usernamePasswordCtrlJs showURL = [jmacro|
           $http.
             post(url, $scope.password).
             success(function (datum, status, headers, config) {
-            $scope.change_password_error = 'Password Changed.';
+            $scope.change_password_error = 'Password Changed.'; // FIXME -- I18N
             $scope.password = {};
           }).
           error(function (datum, status, headers, config) {
             $scope.change_password_error = datum.error;
           });
         } else {
-            $scope.change_password_error = 'Not Authenticated.';
+            $scope.change_password_error = 'Not Authenticated.'; // FIXME -- I18N
         }
       };
 
@@ -170,7 +170,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
               $scope.reset_password_msg = datum.error;
             });
         } else {
-          $scope.reset_password_msg = "reset token not found.";
+          $scope.reset_password_msg = "reset token not found."; // FIXME -- I18N
         }
       };
 
