@@ -21,8 +21,13 @@ source-repository head
 
 Library
   Exposed-modules:     Happstack.Authenticate.Core
+                       Happstack.Authenticate.URL
                        Happstack.Authenticate.Password.Core
                        Happstack.Authenticate.Password.Forms
+                       Happstack.Authenticate.Password.Route
+                       Happstack.Authenticate.Password.Partials
+                       Happstack.Authenticate.Password.Controllers
+                       Happstack.Authenticate.Password.PartialsURL
 
   Build-depends:       base                         > 4 && < 5,
                        acid-state                   >= 0.6 && <= 0.13,
