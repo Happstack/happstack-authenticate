@@ -29,7 +29,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N, SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N, SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), authCookieName, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -196,6 +196,8 @@ token authenticateState passwordState =
                      then unauthorized $ toJSONError InvalidUsernamePassword
                      else do token <- issueToken authenticateState u
 --                             resp 201 $ toJSONResponse $ (Right $ Object $ HashMap.fromList [("token", toJSON token)])
+                             s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
+                             addCookie Session ((mkCookie authCookieName (Text.unpack token)) { secure = s })
                              resp 201 $ toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
 
 ------------------------------------------------------------------------------
