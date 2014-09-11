@@ -50,6 +50,7 @@ data PasswordURL
   | Partial PartialURL
   | PasswordRequestReset
   | PasswordReset
+  | UsernamePasswordCtrl
   deriving (Eq, Ord, Data, Typeable, Generic)
 
 makeBoomerangs ''PasswordURL
@@ -61,6 +62,7 @@ passwordURL =
   <> "partial" </> rPartial . partialURL
   <> "password-request-reset" . rPasswordRequestReset
   <> "password-reset"         . rPasswordReset
+  <> "js" </> rUsernamePasswordCtrl
   )
 
 instance PathInfo PasswordURL where

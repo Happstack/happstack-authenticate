@@ -1,19 +1,21 @@
 module Happstack.Authenticate.Password.Route where
 
-import Control.Applicative ((<$>))
-import Control.Monad.Reader (ReaderT, runReaderT)
-import Data.Acid          (AcidState, closeAcidState, makeAcidic)
-import Data.Acid.Local    (createCheckpointAndClose, openLocalStateFrom)
-import Data.Text          (Text)
+import Control.Applicative   ((<$>))
+import Control.Monad.Reader  (ReaderT, runReaderT)
+import Data.Acid             (AcidState, closeAcidState, makeAcidic)
+import Data.Acid.Local       (createCheckpointAndClose, openLocalStateFrom)
+import Data.Text             (Text)
 import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateState, AuthenticateURL, toJSONError, toJSONResponse)
 import Happstack.Authenticate.Password.Core (PasswordError(..), PasswordState, account, initialPasswordState, passwordReset, passwordRequestReset, token)
+import Happstack.Authenticate.Password.Controllers (usernamePasswordCtrl)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
 import Happstack.Authenticate.Password.Partials (routePartial)
-import Happstack.Server   (Happstack, Response, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
-import HSP (unXMLGenT)
-import System.FilePath    (combine)
+import Happstack.Server      (Happstack, Response, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
+import Happstack.Server.JMacro ()
+import HSP                   (unXMLGenT)
+import System.FilePath       (combine)
 import Text.Shakespeare.I18N (Lang)
-import Web.Routes (PathInfo(..), RouteT(..), mapRouteT, parseSegments)
+import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, parseSegments)
 
 ------------------------------------------------------------------------------
 -- routePassword
@@ -36,6 +38,7 @@ routePassword resetLink domain authenticateState passwordState pathSegments =
         (Partial u)  -> toResponse <$> unXMLGenT (routePartial authenticateState u)
         PasswordRequestReset -> toJSONResponse <$> passwordRequestReset resetLink domain authenticateState passwordState
         PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState
+        UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl
 
 ------------------------------------------------------------------------------
 -- initPassword
