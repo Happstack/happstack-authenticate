@@ -35,7 +35,7 @@ import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
 import Network.HTTP.Types              (toQuery, renderQuery)
-import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail)
+import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail, sendmail)
 import System.FilePath                 (combine)
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
@@ -339,7 +339,8 @@ sendResetEmail :: (MonadIO m) =>
                -> m ()
 sendResetEmail (Email toEm) (Email fromEm) resetLink = liftIO $
   do mailBS <- renderMail' $ simpleMail' (Address Nothing toEm)  (Address (Just "no-reply") fromEm) "Reset Password Request" (LT.fromStrict resetLink)
-     B.putStr mailBS
+     -- B.putStr mailBS
+     sendmail mailBS
 
 -- | JSON record for new account data
 data ResetPasswordData = ResetPasswordData
