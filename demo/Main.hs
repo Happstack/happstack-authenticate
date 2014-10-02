@@ -27,9 +27,13 @@ import Data.Monoid ((<>))
 import GHC.Generics
 import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), initAuthentication, decodeAndVerifyToken)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
+import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
 import Happstack.Authenticate.Password.Core(PasswordState)
 import Happstack.Authenticate.Password.Route (initPassword)
 import Happstack.Authenticate.Password.URL(PasswordURL(..))
+import Happstack.Authenticate.OpenId.Core  (OpenIdState)
+import Happstack.Authenticate.OpenId.Route (initOpenId)
+import Happstack.Authenticate.OpenId.URL   (OpenIdURL(..))
 import Happstack.Server
 import Happstack.Server.HSP.HTML
 import Happstack.Server.XMLGenT
@@ -87,8 +91,9 @@ route authenticateState routeAuthenticate url =
     DemoAppJs   ->
       do ok $ toResponse $ demoAppJs
     UsernamePasswordJs ->
-         do js <- nestURL Authenticate $ usernamePasswordCtrl
-            ok $ toResponse js
+         do js1 <- nestURL Authenticate $ usernamePasswordCtrl
+            js2 <- nestURL Authenticate $ openIdCtrl
+            ok $ toResponse (js1 <> js2)
 --         ok $ toResponse $ userCtrl (u -> routeFn (Authenticate (
 
     Api Restricted -> lift (api authenticateState)
@@ -136,6 +141,7 @@ demoAppJs = [jmacro|
     var demoApp = angular.module('demoApp', [
       'happstackAuthentication',
       'usernamePassword',
+      'openId',
       'ngRoute'
     ]);
 
@@ -221,6 +227,12 @@ index = do
 
                  <p>If you have forgotten your password you can request it to be sent to your email address:</p>
                  <up-request-reset-password />
+
+                 <div ng-controller="OpenIdCtrl">
+                   <p>You could also sign in using your Google OpenId:</p>
+                   <openid-google />
+                 </div>
+
                </div>
 
                <div up-authenticated=True>
@@ -247,7 +259,9 @@ index = do
 
 main :: IO ()
 main =
-  do (cleanup, routeAuthenticate, authenticateState) <- initAuthentication Nothing [initPassword "http://localhost:8000/#resetPassword" "example.org"]
+  do (cleanup, routeAuthenticate, authenticateState) <- initAuthentication Nothing [ initPassword "http://localhost:8000/#resetPassword" "example.org"
+                                                                                   , initOpenId
+                                                                                   ]
      (simpleHTTP nullConf $
       msum [ dir "js"        $ serveDirectory EnableBrowsing [] "js"
            , dir "bootstrap" $ serveDirectory EnableBrowsing [] "bootstrap"

@@ -29,6 +29,14 @@ Library
                        Happstack.Authenticate.Password.PartialsURL
                        Happstack.Authenticate.Password.Route
                        Happstack.Authenticate.Password.URL
+                       Happstack.Authenticate.OpenId.Controllers
+                       Happstack.Authenticate.OpenId.Core
+--                       Happstack.Authenticate.OpenId.Forms
+                       Happstack.Authenticate.OpenId.Partials
+                       Happstack.Authenticate.OpenId.PartialsURL
+--                       Happstack.Authenticate.OpenId.Route
+                       Happstack.Authenticate.OpenId.URL
+
 
   Build-depends:       base                         > 4 && < 5,
                        acid-state                   >= 0.6 && <= 0.13,

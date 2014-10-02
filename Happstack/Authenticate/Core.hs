@@ -376,11 +376,12 @@ getOrGenSharedSecret authenticateState uid =
 -- Token Functions
 ------------------------------------------------------------------------------
 
+type TokenText = Text
 
 issueToken :: (MonadIO m) =>
               AcidState AuthenticateState
            -> User
-           -> m Text
+           -> m TokenText
 issueToken authenticateState user =
   do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
      let claims = def { unregisteredClaims = Map.fromList [("user", toJSON user)] }
@@ -388,7 +389,7 @@ issueToken authenticateState user =
 
 decodeAndVerifyToken :: (MonadIO m) =>
                         AcidState AuthenticateState
-                     -> Text
+                     -> TokenText
                      -> m (Maybe (User, JWT VerifiedJWT))
 decodeAndVerifyToken authenticateState token =
   do let mUnverified = decode token
@@ -418,9 +419,14 @@ authCookieName = "atc"
 
 addTokenCookie :: (Happstack m) =>
                   AcidState AuthenticateState
-               -> Maybe User
-               -> m ()
-addTokenCookie authenticateState mUser =
+               -> User
+               -> m TokenText
+addTokenCookie authenticateState user =
+  do token <- issueToken authenticateState user
+     s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
+     addCookie Session ((mkCookie authCookieName (Text.unpack token)) { secure = s })
+     return token
+  {-
   case mUser of
     (Just user) ->
       do token <- issueToken authenticateState user
@@ -432,7 +438,7 @@ addTokenCookie authenticateState mUser =
            Nothing -> return ()
            (Just cookie) ->
              addCookie Session cookie
-
+-}
 deleteTokenCookie  :: (Happstack m) =>
                       m ()
 deleteTokenCookie =
@@ -531,6 +537,7 @@ nestAuthenticationMethod authenticationMethod =
 
 data CoreError
   = HandlerNotFound -- AuthenticationMethod
+  | URLDecodeFailed
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
