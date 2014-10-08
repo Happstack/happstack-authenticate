@@ -1,10 +1,10 @@
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
 module Happstack.Authenticate.OpenId.Controllers where
 
 import Data.Text                            (Text)
 import qualified Data.Text                  as T
 import Happstack.Authenticate.Core          (AuthenticateURL)
-import Happstack.Authenticate.OpenId.URL (OpenIdURL(Partial), nestOpenIdURL)
+import Happstack.Authenticate.OpenId.URL (OpenIdURL(BeginDance, Partial, ReturnTo), nestOpenIdURL)
 import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle))
 import Language.Javascript.JMacro
 import Web.Routes
@@ -21,12 +21,16 @@ openIdCtrl =
 openIdCtrlJs :: (OpenIdURL -> [(Text, Maybe Text)] -> Text) -> JStat
 openIdCtrlJs showURL = [jmacro|
     var openId = angular.module('openId', ['happstackAuthentication']);
+    var openIdWindow;
+    tokenCB = function (token) { alert('tokenCB: ' + token); };
 
     openId.controller('OpenIdCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
       $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
       $scope.popupWindow = function (str) {
-        window.open("http://www.google.com/", "_blank", "toolbar=0");
+//        openIdWindow = window.open(`(showURL ReturnTo [])`, "_blank", "toolbar=0");
+        tokenCB = function(token) { var u = userService.updateFromToken(token); $scope.isAuthenticated = u.isAuthenticated; $scope.$apply(); };
+        openIdWindow = window.open(`(showURL (BeginDance "https://www.google.com/accounts/o8/id") [])`, "_blank", "toolbar=0");
       }
     }]);
 
@@ -38,6 +42,7 @@ openIdCtrlJs showURL = [jmacro|
     }]);
 
   |]
+
 {-
 openIdCtrlJs showURL = [jmacro|
   {
@@ -107,19 +112,12 @@ openIdCtrlJs showURL = [jmacro|
           success(function (datum, status, headers, config) {
             var encodedClaims = datum.token.split('.')[1];
             var claims = JSON.parse(url_base64_decode(encodedClaims));
-            if (claims.user.email == null) {
-             email = '';
-            } else {
-             email = ', ' + claims.user.email;
-            }
             $scope.username_password_error = '';
-
-//            $scope.isAuthenticated = true;
 
             var u = userService.getUser();
             u.isAuthenticated   = true;
             $scope.isAuthenticated = true;
-            u.username = $scope.user.user;
+            u.username = $scope.user.user; // FIXME: this should come from the token
             u.token  = datum.token;
             userService.setUser(u);
           }).

@@ -12,7 +12,7 @@ import Web.Routes.Boomerang                 (Router, (:-), (<>), boomerangFromPa
 
 data PartialURL
   = UsingGoogle
-  deriving (Eq, Ord, Data, Typeable, Generic)
+  deriving (Eq, Ord, Data, Typeable, Generic, Read, Show)
 
 makeBoomerangs ''PartialURL
 

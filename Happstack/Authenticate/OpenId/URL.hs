@@ -3,16 +3,16 @@ module Happstack.Authenticate.OpenId.URL where
 
 import Control.Category                ((.), id)
 import Data.Data     (Data, Typeable)
+import Data.Text     (Text)
 import GHC.Generics  (Generic)
 import Prelude                         hiding ((.), id)
-import Web.Routes    (RouteT(..))
-import Web.Routes.TH (derivePathInfo)
 import Happstack.Authenticate.Core          (AuthenticateURL, AuthenticationMethod(..), UserId(..), nestAuthenticationMethod, rUserId)
+import Happstack.Authenticate.OpenId.Dance       (DanceURL(..), danceURL)
 import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(..), partialURL)
 import Text.Boomerang.TH               (makeBoomerangs)
-import Web.Routes                      (PathInfo(..))
+import Web.Routes    (PathInfo(..), RouteT(..))
+import Web.Routes.TH (derivePathInfo)
 import Web.Routes.Boomerang
-
 
 ------------------------------------------------------------------------------
 -- openIdAuthenticationMethod
@@ -27,13 +27,17 @@ openIdAuthenticationMethod = AuthenticationMethod "openId"
 
 data OpenIdURL
   = Partial PartialURL
-  deriving (Eq, Ord, Data, Typeable, Generic)
+  | BeginDance Text
+  | ReturnTo
+  deriving (Eq, Ord, Data, Typeable, Generic, Read, Show)
 
 makeBoomerangs ''OpenIdURL
 
 openIdURL :: Router () (OpenIdURL :- ())
 openIdURL =
-  (  "partial" </> rPartial . partialURL
+  (  "partial"     </> rPartial . partialURL
+  <> "begin-dance" </> rBeginDance . anyText
+  <> "return-to"   </> rReturnTo
   )
 
 instance PathInfo OpenIdURL where

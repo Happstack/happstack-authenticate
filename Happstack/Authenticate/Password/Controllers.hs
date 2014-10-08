@@ -21,61 +21,6 @@ usernamePasswordCtrl =
 usernamePasswordCtrlJs :: (PasswordURL -> [(Text, Maybe Text)] -> Text) -> JStat
 usernamePasswordCtrlJs showURL = [jmacro|
   {
-    //this is used to parse the profile
-    function url_base64_decode(str) {
-      var output = str.replace('-', '+').replace('_', '/');
-      switch (output.length % 4) {
-      case 0:
-        break;
-      case 2:
-        output += '==';
-        break;
-      case 3:
-        output += '=';
-        break;
-      default:
-        throw 'Illegal base64url string!';
-      }
-      return window.atob(output); //polifyll https://github.com/davidchambers/Base64.js
-    }
-
-    var happstackAuthentication = angular.module('happstackAuthentication', []);
-    happstackAuthentication.factory('userService', ['$rootScope', function ($rootScope) {
-      var defaultUser = { isAuthenticated: false,
-                          username:        '<unset>',
-                          token:           null
-                        };
-
-      var service = {
-        userCache: defaultUser,
-        setUser: function(u) {
-//          alert('setUser:' + JSON.stringify(u));
-          userCache = u;
-          localStorage.setItem('user', JSON.stringify(u));
-        },
-
-        getUser: function() {
-          var item = localStorage.getItem('user');
-          if (item) {
-//            alert('getUser: ' + item);
-            var user = JSON.parse(item);
-            return(user);
-          }
-        },
-
-        clearUser: function () {
-          userCache = defaultUser;
-          this.setUser(defaultUser);
-        }
-      };
-
-      if (!localStorage.getItem('user')) {
-        service.clearUser();
-      }
-
-      return service;
-    }]);
-
     var usernamePassword = angular.module('usernamePassword', ['happstackAuthentication']);
 
     usernamePassword.controller('UsernamePasswordCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
@@ -85,23 +30,9 @@ usernamePasswordCtrlJs showURL = [jmacro|
         $http.
           post(`(showURL Token [])`, $scope.user).
           success(function (datum, status, headers, config) {
-            var encodedClaims = datum.token.split('.')[1];
-            var claims = JSON.parse(url_base64_decode(encodedClaims));
-            if (claims.user.email == null) {
-             email = '';
-            } else {
-             email = ', ' + claims.user.email;
-            }
             $scope.username_password_error = '';
-
-//            $scope.isAuthenticated = true;
-
-            var u = userService.getUser();
-            u.isAuthenticated   = true;
             $scope.isAuthenticated = true;
-            u.username = $scope.user.user;
-            u.token  = datum.token;
-            userService.setUser(u);
+            userService.updateFromToken(datum.token);
           }).
           error(function (datum, status, headers, config) {
             // Erase the token if the user fails to log in
@@ -250,24 +181,13 @@ usernamePasswordCtrlJs showURL = [jmacro|
       return {
         restrict: 'E',
         link: link
-//        templateUrl: `(showURL (Partial ChangePassword) [])`
-//        template: "<div ng-include=\"'" + `(showURL (Partial ChangePassword) [])` + "'\"></div>"
-//        template: "<div ng-include=\"'/authenticate/authentication-methods/password/partial/change-password'\"></div>"
       };
- /*
-      return {
-        restrict: 'E',
-        templateUrl: `(showURL (Partial ChangePassword) [])`
-      };
-*/
     }]);
-
 
     // upRequestResetPassword directive
     usernamePassword.directive('upRequestResetPassword', [function () {
       return {
         restrict: 'E',
-//        replace: true,
         templateUrl: `(showURL (Partial RequestResetPasswordForm) [])`
       };
     }]);
@@ -276,15 +196,14 @@ usernamePasswordCtrlJs showURL = [jmacro|
     usernamePassword.directive('upResetPassword', [function () {
       return {
         restrict: 'E',
-//        replace: true,
         templateUrl: `(showURL (Partial ResetPasswordForm) [])`
       };
     }]);
 
+    // upSignupPassword directive
     usernamePassword.directive('upSignupPassword', [function () {
       return {
         restrict: 'E',
-//        replace: true,
         templateUrl: `(showURL (Partial SignupPassword) [])`
       };
     }]);

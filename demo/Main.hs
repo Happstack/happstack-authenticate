@@ -25,7 +25,8 @@ import qualified Data.Text.Encoding as T
 import Data.Unique
 import Data.Monoid ((<>))
 import GHC.Generics
-import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), initAuthentication, decodeAndVerifyToken)
+import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), decodeAndVerifyToken)
+import Happstack.Authenticate.Route (initAuthentication)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
 import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
 import Happstack.Authenticate.Password.Core(PasswordState)
@@ -71,7 +72,7 @@ data SiteURL
   | Authenticate AuthenticateURL
   | Api API
   | DemoAppJs
-  | UsernamePasswordJs
+--  | UsernamePasswordJs
     deriving (Eq, Ord, Data, Typeable, Generic)
 
 derivePathInfo ''SiteURL
@@ -90,12 +91,13 @@ route authenticateState routeAuthenticate url =
     Authenticate authenticateURL -> nestURL Authenticate $ routeAuthenticate authenticateURL
     DemoAppJs   ->
       do ok $ toResponse $ demoAppJs
+         {-
     UsernamePasswordJs ->
          do js1 <- nestURL Authenticate $ usernamePasswordCtrl
             js2 <- nestURL Authenticate $ openIdCtrl
             ok $ toResponse (js1 <> js2)
 --         ok $ toResponse $ userCtrl (u -> routeFn (Authenticate (
-
+-}
     Api Restricted -> lift (api authenticateState)
 
 api :: AcidState AuthenticateState
@@ -199,7 +201,7 @@ index = do
         <script src="/js/angular.min.js"></script>
         <script src="/js/angular-route.min.js"></script>
         <script src=(routeFn DemoAppJs [])></script>
-        <script src=(routeFn UsernamePasswordJs [])></script>
+        <script src=(routeFn (Authenticate Controllers) [])></script>
       </head>
       <body ng-app="demoApp" ng-controller="UsernamePasswordCtrl">
        <nav class="navbar navbar-default" role="navigation">
@@ -265,6 +267,6 @@ main =
      (simpleHTTP nullConf $
       msum [ dir "js"        $ serveDirectory EnableBrowsing [] "js"
            , dir "bootstrap" $ serveDirectory EnableBrowsing [] "bootstrap"
-           , implSite "//localhost:8000" "" $
+           , implSite "http://localhost:8000" "" $ -- FIXME: allow //localhost:8000
               setDefault Index $ mkSitePI (runRouteT $ route authenticateState routeAuthenticate)
            ]) `finally` cleanup

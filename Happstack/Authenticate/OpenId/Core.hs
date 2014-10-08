@@ -2,7 +2,7 @@
 module Happstack.Authenticate.OpenId.Core where
 
 import Control.Applicative         (Alternative)
-import Control.Lens                (makeLenses, view, at)
+import Control.Lens                ((?=), (^.), makeLenses, view, at)
 import Control.Monad.Trans         (MonadIO(liftIO))
 import Data.Acid                   (AcidState, Query, Update, makeAcidic)
 import Data.Acid.Advanced          (query', update')
@@ -13,16 +13,18 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Map                    (Map)
 import qualified Data.Map          as Map
 import Data.Maybe                  (mapMaybe)
+import Data.Monoid                 ((<>))
 import Data.SafeCopy               (SafeCopy, base, deriveSafeCopy)
 import qualified Data.Text               as T
 import           Data.Text               (Text)
+import qualified Data.Text.Encoding      as T
 import qualified Data.Text.Lazy          as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Map          as Map
 import GHC.Generics                (Generic)
-import Happstack.Authenticate.Core (AuthenticateState, UserId(..), GetUserByUserId(..), HappstackAuthenticateI18N, addTokenCookie, jsonOptions, toJSONError, toJSONResponse)
+import Happstack.Authenticate.Core (AuthenticateState, UserId(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N, addTokenCookie, jsonOptions, toJSONError, toJSONResponse, userId)
 import Happstack.Authenticate.OpenId.URL
-import Happstack.Server            (Happstack, Response, badRequest, internalServerError, lookPairsBS, resp, toResponseBS)
+import Happstack.Server            (Happstack, Response, badRequest, internalServerError, lookPairsBS, resp, toResponse, toResponseBS, ok)
 import Language.Javascript.JMacro
 import Network.HTTP.Conduit        (withManager)
 import Text.Shakespeare.I18N       (RenderMessage(..), Lang, mkMessageFor)
@@ -85,7 +87,12 @@ initialOpenIdState = OpenIdState
 identifierToUserId :: Identifier -> Query OpenIdState (Maybe UserId)
 identifierToUserId identifier = view (identifiers . at identifier)
 
+associateIdentifierWithUserId :: Identifier -> UserId -> Update OpenIdState ()
+associateIdentifierWithUserId ident uid =
+  identifiers . at ident ?= uid
+
 makeAcidic ''OpenIdState ['identifierToUserId
+                         ,'associateIdentifierWithUserId
                          ]
 
 -- this get's the identifier the openid provider provides. It is our
@@ -107,16 +114,31 @@ token :: (Alternative m, Happstack m) =>
 token authenticateState openIdState =
     do identifier <- getIdentifier
        mUserId <- query' openIdState (IdentifierToUserId identifier)
-       case mUserId of
-         Nothing       -> badRequest $ toJSONError UnknownIdentifier
+       mUser <- case mUserId of
+         Nothing    -> -- badRequest $ toJSONError UnknownIdentifier
+           do user <- update' authenticateState CreateAnonymousUser
+              update' openIdState (AssociateIdentifierWithUserId identifier (user ^. userId))
+--              addTokenCookie authenticateState user
+              return (Just user)
          (Just uid) ->
            do mu <- query' authenticateState (GetUserByUserId uid)
               case mu of
-                Nothing -> internalServerError $ toJSONError InvalidUserId
+                Nothing -> return Nothing
                 (Just u) ->
+                  return (Just u)
+       case mUser of
+         Nothing     -> internalServerError $ toJSONError InvalidUserId
+         (Just user) -> do token <- addTokenCookie authenticateState user
+                           let tokenBS = TL.encodeUtf8 $ TL.fromStrict token
+--                           ok $ toResponse token
+                           ok $ toResponseBS "text/html" $ "<html><head><script type='text/javascript'>window.opener.tokenCB('" <> tokenBS <> "'); window.close();</script></head><body></body></html>"
+
+--                           liftIO $ print token
+--                           ok $ toResponseBS "text/html" $ "<html><head><script type='text/javascript'>localStorage.setItem('user',</script></head><body>wheee</body></html>"
+                  {-
                   do token <- addTokenCookie authenticateState u
                      resp 201 $ toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
-
+-}
 {-
 account :: (Happstack m) =>
            AcidState AuthenticateState

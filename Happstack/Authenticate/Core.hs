@@ -38,7 +38,7 @@ import Control.Applicative             (Applicative(pure), Alternative, (<$>), o
 import Control.Category                ((.), id)
 import Control.Exception               (SomeException)
 import qualified Control.Exception     as E
-import Control.Lens                    ((?=), (^.), (.~), makeLenses, view, set)
+import Control.Lens                    ((?=), (.=), (^.), (.~), makeLenses, view, set)
 import Control.Lens.At                 (IxValue(..), Ixed(..), Index(..), At(at))
 import Control.Monad.Trans             (MonadIO(liftIO))
 import Control.Monad.Reader            (ask)
@@ -56,9 +56,8 @@ import Data.Default                    (def)
 import Data.Map                        (Map)
 import qualified Data.Map              as Map
 import Data.Maybe                      (fromMaybe, maybeToList)
-import Data.Monoid                     ((<>))
+import Data.Monoid                     ((<>), mconcat)
 import Data.SafeCopy                   (SafeCopy, base, deriveSafeCopy)
-import Data.Unique                     (hashUnique, newUnique)
 import Data.IxSet.Typed
 import qualified Data.IxSet.Typed      as IxSet
 import           Data.Set              (Set)
@@ -68,11 +67,9 @@ import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
 import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics                    (Generic)
-import Happstack.Server                (Cookie(secure), CookieLife(Session), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
-import HSP.JMacro                      (IntegerSupply(..), nextInteger')
+import Happstack.Server                (Cookie(secure), CookieLife(Session, MaxAge), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
 import Language.Javascript.JMacro
 import Prelude                         hiding ((.), id)
-import System.FilePath                 (combine)
 import System.IO                       (IOMode(ReadMode), withFile)
 import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
@@ -231,14 +228,26 @@ initialSharedSecrets :: SharedSecrets
 initialSharedSecrets = Map.empty
 
 ------------------------------------------------------------------------------
+-- NewAccountMode
+------------------------------------------------------------------------------
+
+data NewAccountMode
+  = OpenRegistration      -- ^ new users can create their own accounts
+  | ModeratedRegistration -- ^ new users can apply to create their own accounts, but a moderator must approve them before they are active
+  | ClosedRegistration    -- ^ only the admin can create a new account
+    deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 1 'base ''NewAccountMode
+
+------------------------------------------------------------------------------
 -- AuthenticateState
 ------------------------------------------------------------------------------
 
 data AuthenticateState = AuthenticateState
-    { _sharedSecrets         :: SharedSecrets
-    , _users                 :: IxUser
-    , _nextUserId            :: UserId
-    , _defaultSessionTimeout :: Int -- ^ default session time out in seconds
+    { _sharedSecrets             :: SharedSecrets
+    , _users                     :: IxUser
+    , _nextUserId                :: UserId
+    , _defaultSessionTimeout     :: Int     -- ^ default session time out in seconds
+    , _newAccountMode :: NewAccountMode
     }
     deriving (Eq, Show, Typeable, Generic)
 deriveSafeCopy 1 'base ''AuthenticateState
@@ -247,10 +256,11 @@ makeLenses ''AuthenticateState
 -- | a reasonable initial 'AuthenticateState'
 initialAuthenticateState :: AuthenticateState
 initialAuthenticateState = AuthenticateState
-    { _sharedSecrets          = initialSharedSecrets
-    , _users                  = IxSet.fromList [(User (UserId 0) (Username "stepcut") (Just $ Email "jeremy@n-heptane.com"))]
-    , _nextUserId             = UserId 1
-    , _defaultSessionTimeout  = 60*60
+    { _sharedSecrets             = initialSharedSecrets
+    , _users                     = IxSet.fromList [(User (UserId 0) (Username "stepcut") (Just $ Email "jeremy@n-heptane.com"))]
+    , _nextUserId                = UserId 1
+    , _defaultSessionTimeout     = 60*60
+    , _newAccountMode            = OpenRegistration
     }
 
 ------------------------------------------------------------------------------
@@ -286,6 +296,21 @@ getDefaultSessionTimeout =
     view defaultSessionTimeout <$> ask
 
 ------------------------------------------------------------------------------
+-- NewAccountMode AcidState Methods
+------------------------------------------------------------------------------
+
+-- | set the 'NewAccountMode'
+setNewAccountMode :: NewAccountMode
+                  -> Update AuthenticateState ()
+setNewAccountMode mode =
+  newAccountMode .= mode
+
+-- | get the 'NewAccountMode'
+getNewAccountMode :: Query AuthenticateState NewAccountMode
+getNewAccountMode =
+  view newAccountMode
+
+------------------------------------------------------------------------------
 -- User related AcidState Methods
 ------------------------------------------------------------------------------
 
@@ -301,6 +326,22 @@ createUser u =
                   }
      put as'
      return user'
+
+-- | Create a new 'User'. This will allocate a new 'UserId'. The
+-- returned 'User' value will have the updated 'UserId'.
+createAnonymousUser :: Update AuthenticateState User
+createAnonymousUser =
+  do as@AuthenticateState{..} <- get
+     let user = User { _userId   = _nextUserId
+                     , _username = Username ("Anonymous " <> Text.pack (show _nextUserId))
+                     , _email    = Nothing
+                     }
+         as' = as { _users      = IxSet.insert user _users
+                  , _nextUserId = succ _nextUserId
+                  }
+     put as'
+     return user
+
 
 -- | Update an existing 'User'. Must already have a valid 'UserId'.
 updateUser :: User
@@ -346,7 +387,10 @@ makeAcidic ''AuthenticateState
     , 'getDefaultSessionTimeout
     , 'setSharedSecret
     , 'getSharedSecret
+    , 'setNewAccountMode
+    , 'getNewAccountMode
     , 'createUser
+    , 'createAnonymousUser
     , 'updateUser
     , 'deleteUser
     , 'getUserByUsername
@@ -424,7 +468,7 @@ addTokenCookie :: (Happstack m) =>
 addTokenCookie authenticateState user =
   do token <- issueToken authenticateState user
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
-     addCookie Session ((mkCookie authCookieName (Text.unpack token)) { secure = s })
+     addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
      return token
   {-
   case mUser of
@@ -505,16 +549,18 @@ type AuthenticationHandlers = Map AuthenticationMethod AuthenticationHandler
 ------------------------------------------------------------------------------
 
 data AuthenticateURL
-    = Users (Maybe UserId)
-    | AuthenticationMethods (Maybe (AuthenticationMethod, [Text]))
+    = -- Users (Maybe UserId)
+      AuthenticationMethods (Maybe (AuthenticationMethod, [Text]))
+    | Controllers
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 
 makeBoomerangs ''AuthenticateURL
 
 authenticateURL :: Router () (AuthenticateURL :- ())
 authenticateURL =
-  (  "users" </> (  rUsers . rMaybe userId )
-  <> "authentication-methods" </> ( rAuthenticationMethods . rMaybe authenticationMethod)
+  (  -- "users" </> (  rUsers . rMaybe userId )
+    "authentication-methods" </> ( rAuthenticationMethods . rMaybe authenticationMethod)
+  <> "controllers" . rControllers
   )
   where
     userId = rUserId . integer
@@ -546,38 +592,3 @@ instance ToJExpr CoreError where
     toJExpr = toJExpr . toJSON
 
 mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
-
-------------------------------------------------------------------------------
--- route
-------------------------------------------------------------------------------
-
-route :: AuthenticationHandlers
-      -> AuthenticateURL
-      -> RouteT AuthenticateURL (ServerPartT IO) Response
-route authenticationHandlers url =
-  case url of
-    (AuthenticationMethods (Just (authenticationMethod, pathInfo))) ->
-      case Map.lookup authenticationMethod authenticationHandlers of
-        (Just handler) -> handler pathInfo
-        Nothing        -> notFound $ toJSONError (HandlerNotFound {- authenticationMethod-} ) --FIXME
-
-------------------------------------------------------------------------------
--- initAuthenticate
-------------------------------------------------------------------------------
-
-initAuthentication :: Maybe FilePath
-                 -> [FilePath -> AcidState AuthenticateState -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler))]
-                 -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState)
-initAuthentication mBasePath initMethods =
-  do let authenticatePath = combine (fromMaybe "_local" mBasePath) "authenticate"
-     authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
-     -- FIXME: need to deal with one of the initMethods throwing an exception
-     (cleanupPartial, handlers) <- unzip <$> mapM (\initMethod -> initMethod authenticatePath authenticateState) initMethods
-     let cleanup = sequence_ $ map (\c -> c True) cleanupPartial
-         h       = route (Map.fromList handlers)
-     return (cleanup, h, authenticateState)
-
-
-instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where
- nextInteger =
-  fmap (fromIntegral . (`mod` 1024) . hashUnique) (liftIO newUnique)

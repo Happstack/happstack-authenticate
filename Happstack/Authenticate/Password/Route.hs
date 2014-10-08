@@ -10,9 +10,10 @@ import Happstack.Authenticate.Password.Core (PasswordError(..), PasswordState, a
 import Happstack.Authenticate.Password.Controllers (usernamePasswordCtrl)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
 import Happstack.Authenticate.Password.Partials (routePartial)
-import Happstack.Server      (Happstack, Response, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
+import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
 import Happstack.Server.JMacro ()
 import HSP                   (unXMLGenT)
+import Language.Javascript.JMacro (JStat)
 import System.FilePath       (combine)
 import Text.Shakespeare.I18N (Lang)
 import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, parseSegments)
@@ -48,7 +49,7 @@ initPassword :: Text
              -> Text
              -> FilePath
              -> AcidState AuthenticateState
-             -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler))
+             -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
 initPassword resetLink domain basePath authenticateState =
   do passwordState <- openLocalStateFrom (combine basePath "password") initialPasswordState
      let shutdown = \normal ->
@@ -60,4 +61,4 @@ initPassword resetLink domain basePath authenticateState =
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
                routePassword resetLink domain authenticateState passwordState pathSegments
-     return (shutdown, (passwordAuthenticationMethod, authenticationHandler))
+     return (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl)
