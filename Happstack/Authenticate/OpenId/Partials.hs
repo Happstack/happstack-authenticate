@@ -15,12 +15,14 @@ import Happstack.Server.HSP.HTML            ()
 import Language.Haskell.HSX.QQ              (hsx)
 import Language.Javascript.JMacro
 import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, UserId(..), User(..), HappstackAuthenticateI18N(..), getToken)
+import Happstack.Authenticate.OpenId.URL  (OpenIdURL(..), nestOpenIdURL)
 import Happstack.Authenticate.OpenId.PartialsURL  (PartialURL(..))
 import Happstack.Server                     (Happstack, unauthorized)
 import Happstack.Server.XMLGenT             ()
 import HSP.JMacro                           ()
 import Prelude                              hiding ((.), id)
 import Text.Shakespeare.I18N                (Lang, mkMessageFor, renderMessage)
+import Web.Authenticate.OpenId.Providers    (google, yahoo)
 import Web.Routes
 import Web.Routes.XMLGenT                   ()
 import Web.Routes.TH                        (derivePathInfo)
@@ -30,6 +32,7 @@ type Partial  m = XMLGenT (RouteT AuthenticateURL (ReaderT [Lang] m))
 
 data PartialMsgs
   = UsingGoogleMsg
+  | UsingYahooMsg
 
 mkMessageFor "HappstackAuthenticateI18N" "PartialMsgs" "messages/openid/partials" "en"
 
@@ -50,13 +53,24 @@ routePartial :: (Functor m, Monad m, Happstack m) =>
 routePartial authenticateState url =
   case url of
     UsingGoogle    -> usingGoogle
+    UsingYahoo     -> usingYahoo
 
 usingGoogle :: (Functor m, Monad m) =>
                       Partial m XML
 usingGoogle =
-  [hsx|
-    <a ng-click="popupWindow('using google')">Google OpenId</a>
-   |]
+  do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack google))
+     [hsx|
+       <a ng-click=("openIdWindow('" <> danceURL <> "')")><% UsingGoogleMsg %></a>
+     |]
+
+usingYahoo :: (Functor m, Monad m) =>
+                      Partial m XML
+usingYahoo =
+  do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack yahoo))
+     [hsx|
+       <a ng-click=("openIdWindow('" <> danceURL <> "')")><% UsingYahooMsg %></a>
+     |]
+
 
 {-
 signupPasswordForm :: (Functor m, Monad m) =>

@@ -1,1 +1,2 @@
-UsingGoogleMsg: Using Google
+UsingGoogleMsg: Google OpenId
+UsingYahooMsg: Yahoo OpenId

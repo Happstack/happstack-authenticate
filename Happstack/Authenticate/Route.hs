@@ -1,24 +1,25 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Happstack.Authenticate.Route where
 
-import Control.Applicative             ((<$>))
-import Control.Monad.Trans             (MonadIO(liftIO))
-import Data.Acid                       (AcidState)
-import Data.Acid.Local
-import Data.Traversable                (sequence)
-import Data.Unique                     (hashUnique, newUnique)
-import qualified Data.Map              as Map
-import Data.Maybe
-import Data.Monoid                          (mconcat)
-import Happstack.Authenticate.Core
+import Control.Applicative ((<$>))
+import Control.Monad.Trans (MonadIO(liftIO))
+import Data.Acid (AcidState)
+import Data.Acid.Local (openLocalStateFrom)
+import qualified Data.Map as Map (fromList, lookup)
+import Data.Maybe (fromMaybe, Maybe(..))
+import Data.Monoid (mconcat)
+import Data.Traversable (sequence)
+import Data.Unique (hashUnique, newUnique)
+import HSP.JMacro (IntegerSupply(..))
 import Happstack.Authenticate.Controller (authenticateCtrl)
-import Happstack.Server
+import Happstack.Authenticate.Core (AuthenticateState, AuthenticateURL(..), AuthenticationHandler, AuthenticationHandlers, AuthenticationMethod, CoreError(HandlerNotFound), initialAuthenticateState, toJSONError)
+import Happstack.Server (notFound, ok, Response, ServerPartT, ToMessage(toResponse))
 import Happstack.Server.JMacro ()
-import HSP.JMacro                      (IntegerSupply(..), nextInteger')
-import Language.Javascript.JMacro
-import Prelude                         hiding (sequence)
-import System.FilePath                 (combine)
-import Web.Routes
+import Language.Javascript.JMacro (JStat)
+import Prelude (($), (.), Bool(True), FilePath, fromIntegral, Functor(..), Integral(mod), IO, map, mapM, Monad(return), sequence_, unzip3)
+import Prelude hiding (sequence)
+import System.FilePath (combine)
+import Web.Routes (RouteT)
 
 ------------------------------------------------------------------------------
 -- route

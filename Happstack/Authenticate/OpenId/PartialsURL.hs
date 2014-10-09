@@ -9,9 +9,9 @@ import Text.Boomerang.TH                    (makeBoomerangs)
 import Web.Routes                           (PathInfo(..))
 import Web.Routes.Boomerang                 (Router, (:-), (<>), boomerangFromPathSegments, boomerangToPathSegments)
 
-
 data PartialURL
   = UsingGoogle
+  | UsingYahoo
   deriving (Eq, Ord, Data, Typeable, Generic, Read, Show)
 
 makeBoomerangs ''PartialURL
@@ -19,6 +19,7 @@ makeBoomerangs ''PartialURL
 partialURL :: Router () (PartialURL :- ())
 partialURL =
   (  "using-google"         . rUsingGoogle
+  <> "using-yahoo"          . rUsingYahoo
   )
 
 instance PathInfo PartialURL where

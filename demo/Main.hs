@@ -233,6 +233,7 @@ index = do
                  <div ng-controller="OpenIdCtrl">
                    <p>You could also sign in using your Google OpenId:</p>
                    <openid-google />
+                   <openid-yahoo />
                  </div>
 
                </div>

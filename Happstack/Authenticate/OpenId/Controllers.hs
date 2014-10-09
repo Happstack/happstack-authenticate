@@ -5,7 +5,7 @@ import Data.Text                            (Text)
 import qualified Data.Text                  as T
 import Happstack.Authenticate.Core          (AuthenticateURL)
 import Happstack.Authenticate.OpenId.URL (OpenIdURL(BeginDance, Partial, ReturnTo), nestOpenIdURL)
-import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle))
+import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle, UsingYahoo))
 import Language.Javascript.JMacro
 import Web.Routes
 
@@ -27,10 +27,10 @@ openIdCtrlJs showURL = [jmacro|
     openId.controller('OpenIdCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
       $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
-      $scope.popupWindow = function (str) {
+      $scope.openIdWindow = function (providerUrl) {
 //        openIdWindow = window.open(`(showURL ReturnTo [])`, "_blank", "toolbar=0");
         tokenCB = function(token) { var u = userService.updateFromToken(token); $scope.isAuthenticated = u.isAuthenticated; $scope.$apply(); };
-        openIdWindow = window.open(`(showURL (BeginDance "https://www.google.com/accounts/o8/id") [])`, "_blank", "toolbar=0");
+        openIdWindow = window.open(providerUrl, "_blank", "toolbar=0");
       }
     }]);
 
@@ -38,6 +38,13 @@ openIdCtrlJs showURL = [jmacro|
       return {
         restrict: 'E',
         templateUrl: `(showURL (Partial UsingGoogle) [])`
+      };
+    }]);
+
+    openId.directive('openidYahoo', ['$rootScope', function ($rootScope) {
+      return {
+        restrict: 'E',
+        templateUrl: `(showURL (Partial UsingYahoo) [])`
       };
     }]);
 
