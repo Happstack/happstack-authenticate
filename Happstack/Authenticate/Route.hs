@@ -4,7 +4,7 @@ module Happstack.Authenticate.Route where
 import Control.Applicative ((<$>))
 import Control.Monad.Trans (MonadIO(liftIO))
 import Data.Acid (AcidState)
-import Data.Acid.Local (openLocalStateFrom)
+import Data.Acid.Local (openLocalStateFrom, createCheckpointAndClose)
 import qualified Data.Map as Map (fromList, lookup)
 import Data.Maybe (fromMaybe, Maybe(..))
 import Data.Monoid (mconcat)
@@ -51,7 +51,7 @@ initAuthentication mBasePath initMethods =
      authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
      -- FIXME: need to deal with one of the initMethods throwing an exception
      (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState) initMethods
-     let cleanup = sequence_ $ map (\c -> c True) cleanupPartial
+     let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
          h       = route javascript (Map.fromList handlers)
      return (cleanup, h, authenticateState)
 

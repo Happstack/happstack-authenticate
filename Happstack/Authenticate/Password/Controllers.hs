@@ -9,9 +9,6 @@ import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, L
 import Language.Javascript.JMacro
 import Web.Routes
 
-instance ToJExpr Text where
-  toJExpr t = toJExpr (T.unpack t)
-
 usernamePasswordCtrl :: (Monad m) => RouteT AuthenticateURL m JStat
 usernamePasswordCtrl =
   nestPasswordURL $
@@ -24,29 +21,26 @@ usernamePasswordCtrlJs showURL = [jmacro|
     var usernamePassword = angular.module('usernamePassword', ['happstackAuthentication']);
 
     usernamePassword.controller('UsernamePasswordCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
-      $scope.isAuthenticated = userService.getUser().isAuthenticated;
+/*      $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
+      $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
+*/
       $scope.login = function () {
         $http.
           post(`(showURL Token [])`, $scope.user).
           success(function (datum, status, headers, config) {
             $scope.username_password_error = '';
-            $scope.isAuthenticated = true;
+//            $scope.isAuthenticated = true;
             userService.updateFromToken(datum.token);
           }).
           error(function (datum, status, headers, config) {
             // Erase the token if the user fails to log in
             userService.clearUser();
-            $scope.isAuthenticated = false;
+//            $scope.isAuthenticated = false;
 
             // Handle login errors here
             $scope.username_password_error = datum.error;
           });
-      };
-
-      $scope.logout = function () {
-        userService.clearUser();
-        $scope.isAuthenticated = false;
       };
 
       $scope.signupPassword = function () {

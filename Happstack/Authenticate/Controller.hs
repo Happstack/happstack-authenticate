@@ -7,9 +7,6 @@ import Happstack.Authenticate.Core          (AuthenticateURL)
 import Language.Javascript.JMacro
 import Web.Routes                           (RouteT, askRouteFn)
 
-instance ToJExpr Text where
-  toJExpr t = toJExpr (T.unpack t)
-
 authenticateCtrl :: (Monad m) => RouteT AuthenticateURL m JStat
 authenticateCtrl =
   do fn <- askRouteFn
@@ -38,6 +35,17 @@ authenticateCtrlJs showURL = [jmacro|
 
     // declare happstackAuthentication module
     var happstackAuthentication = angular.module('happstackAuthentication', []);
+
+    // add controller
+    happstackAuthentication.controller('AuthenticationCtrl', ['$scope', 'userService', function ($scope, userService) {
+      $scope.isAuthenticated = userService.getUser().isAuthenticated;
+      $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
+
+      $scope.logout = function () {
+          userService.clearUser();
+      };
+
+    }]);
 
     // add userService
     happstackAuthentication.factory('userService', ['$rootScope', function ($rootScope) {

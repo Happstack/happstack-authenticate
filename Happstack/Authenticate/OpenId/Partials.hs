@@ -60,7 +60,7 @@ usingGoogle :: (Functor m, Monad m) =>
 usingGoogle =
   do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack google))
      [hsx|
-       <a ng-click=("openIdWindow('" <> danceURL <> "')")><% UsingGoogleMsg %></a>
+       <a ng-click=("openIdWindow('" <> danceURL <> "')")><img src="https://raw.githubusercontent.com/intridea/authbuttons/master/png/google_32.png" alt=UsingGoogleMsg /></a>
      |]
 
 usingYahoo :: (Functor m, Monad m) =>
@@ -68,7 +68,7 @@ usingYahoo :: (Functor m, Monad m) =>
 usingYahoo =
   do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack yahoo))
      [hsx|
-       <a ng-click=("openIdWindow('" <> danceURL <> "')")><% UsingYahooMsg %></a>
+       <a ng-click=("openIdWindow('" <> danceURL <> "')")><img src="https://raw.githubusercontent.com/intridea/authbuttons/master/png/yahoo_32.png" alt=UsingYahooMsg /></a>
      |]
 
 

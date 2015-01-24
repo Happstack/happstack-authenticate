@@ -9,9 +9,6 @@ import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle, UsingY
 import Language.Javascript.JMacro
 import Web.Routes
 
-instance ToJExpr Text where
-  toJExpr t = toJExpr (T.unpack t)
-
 openIdCtrl :: (Monad m) => RouteT AuthenticateURL m JStat
 openIdCtrl =
   nestOpenIdURL $
@@ -25,7 +22,9 @@ openIdCtrlJs showURL = [jmacro|
     tokenCB = function (token) { alert('tokenCB: ' + token); };
 
     openId.controller('OpenIdCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
-      $scope.isAuthenticated = userService.getUser().isAuthenticated;
+//      $scope.isAuthenticated = userService.getUser().isAuthenticated;
+
+//      $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
 
       $scope.openIdWindow = function (providerUrl) {
 //        openIdWindow = window.open(`(showURL ReturnTo [])`, "_blank", "toolbar=0");

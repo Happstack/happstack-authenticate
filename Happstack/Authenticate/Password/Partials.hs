@@ -103,9 +103,9 @@ signupPasswordForm =
 usernamePasswordForm :: (Functor m, Monad m) =>
                         Partial m XML
 usernamePasswordForm = [hsx|
-    <div>
-     <div ng-show="!isAuthenticated">
-      <form ng-submit="login()" role="form" class="navbar-form navbar-right">
+    <span>
+     <span ng-show="!isAuthenticated">
+      <form ng-submit="login()" role="form" class="navbar-form navbar-left">
        <div class="form-group">
         <label class="sr-only" for="username"><% UsernameMsg %> </label>
         <input class="form-control" ng-model="user.user" type="text" id="username" name="user" placeholder=UsernameMsg />
@@ -119,12 +119,17 @@ usernamePasswordForm = [hsx|
        </div>
       </form>
       <div>{{username_password_error}}</div>
-     </div>
-      <div ng-show="isAuthenticated">
-       <a class="navbar-right" ng-click="logout()" href=""><% LogoutMsg %></a>
-     </div>
-    </div>
+     </span>
+    </span>
   |]
+
+{-
+     <span ng-show="isAuthenticated">
+      <div class="form-group">
+       <a class="navbar-right" ng-click="logout()" href=""><% LogoutMsg %></a>
+      </div>
+     </span>
+-}
 
 changePasswordForm :: (Functor m, MonadIO m) =>
                       UserId

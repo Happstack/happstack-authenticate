@@ -48,7 +48,6 @@ import qualified Data.Aeson            as A
 import Data.Aeson.Types                (Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
 import Data.Acid                       (AcidState, Update, Query, makeAcidic)
 import Data.Acid.Advanced              (update', query')
-import Data.Acid.Local                 (createCheckpointAndClose, openLocalStateFrom)
 import Data.ByteString.Base64          (encode)
 import qualified Data.ByteString.Char8 as B
 import Data.Data                       (Data, Typeable)
@@ -80,22 +79,10 @@ import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
 
+instance ToJExpr Text where
+  toJExpr t = toJExpr (Text.unpack t)
+
 data HappstackAuthenticateI18N = HappstackAuthenticateI18N
-
-{-
--- | an 'AuthId' uniquely identifies an authentication.
-newtype AuthId = AuthId { unAuthId :: Integer }
-      deriving (Eq, Ord, Read, Show, Data, Typeable)
-$(deriveSafeCopy 1 'base ''AuthId)
-
-instance PathInfo AuthId where
-    toPathSegments (AuthId i) = toPathSegments i
-    fromPathSegments = AuthId <$> fromPathSegments
-
-succAuthId :: AuthId -> AuthId
-succAuthId (AuthId i) = AuthId (succ i)
-
--}
 
 -- | when creating JSON field names, drop the first character. Since
 -- we are using lens, the leading character should always be _.
@@ -470,19 +457,7 @@ addTokenCookie authenticateState user =
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
      addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
      return token
-  {-
-  case mUser of
-    (Just user) ->
-      do token <- issueToken authenticateState user
-         s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
-         addCookie Session ((mkCookie authCookieName (Text.unpack token)) { secure = s })
-    Nothing ->
-      do mCookie <- optional $ lookCookie authCookieName
-         case mCookie of
-           Nothing -> return ()
-           (Just cookie) ->
-             addCookie Session cookie
--}
+
 deleteTokenCookie  :: (Happstack m) =>
                       m ()
 deleteTokenCookie =
@@ -524,6 +499,20 @@ getToken authenticateState =
      case mToken of
        Nothing      -> getTokenCookie authenticateState
        (Just token) -> return (Just token)
+
+
+------------------------------------------------------------------------------
+-- helper function: calls `getToken` but only returns the `UserId`
+------------------------------------------------------------------------------
+getUserId :: (Happstack m) =>
+             AcidState AuthenticateState
+          -> m (Maybe UserId)
+getUserId authenticateState =
+  do mToken <- getToken authenticateState
+     case mToken of
+       Nothing       -> return Nothing
+       (Just (u, _)) -> return $ Just (u ^. userId)
+
 
 ------------------------------------------------------------------------------
 -- AuthenticationMethod

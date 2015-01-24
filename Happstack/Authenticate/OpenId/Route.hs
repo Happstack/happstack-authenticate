@@ -27,11 +27,12 @@ import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, nestURL, pars
 ------------------------------------------------------------------------------
 
 routeOpenId :: (Happstack m) =>
-               AcidState AuthenticateState
+               Maybe Text
+            -> AcidState AuthenticateState
             -> AcidState OpenIdState
             -> [Text]
             -> RouteT AuthenticateURL (ReaderT [Lang] m) Response
-routeOpenId authenticateState openIdState pathSegments =
+routeOpenId realm authenticateState openIdState pathSegments =
   case parseSegments fromPathSegments pathSegments of
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
@@ -39,7 +40,7 @@ routeOpenId authenticateState openIdState pathSegments =
         (Partial u) -> toResponse <$> unXMLGenT (routePartial authenticateState u)
         (BeginDance providerURL) ->
           do returnURL <- nestOpenIdURL $ showURL ReturnTo
-             forwardURL <- liftIO $ withManager $ getForwardUrl providerURL returnURL Nothing [("Email", "http://schema.openid.net/contact/email")]
+             forwardURL <- liftIO $ withManager $ getForwardUrl providerURL returnURL realm [] -- [("Email", "http://schema.openid.net/contact/email")]
              seeOther forwardURL (toResponse ())
 
         ReturnTo -> token authenticateState openIdState
@@ -48,10 +49,11 @@ routeOpenId authenticateState openIdState pathSegments =
 -- initOpenId
 ------------------------------------------------------------------------------
 
-initOpenId :: FilePath
-             -> AcidState AuthenticateState
-             -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initOpenId basePath authenticateState =
+initOpenId :: Maybe Text
+           -> FilePath
+           -> AcidState AuthenticateState
+           -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
+initOpenId realm basePath authenticateState =
   do openIdState <- openLocalStateFrom (combine basePath "openId") initialOpenIdState
      let shutdown = \normal ->
            if normal
@@ -61,5 +63,5 @@ initOpenId basePath authenticateState =
            do langsOveride <- queryString $ lookTexts' "_LANG"
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
-               routeOpenId authenticateState openIdState pathSegments
+               routeOpenId realm authenticateState openIdState pathSegments
      return (shutdown, (openIdAuthenticationMethod, authenticationHandler), openIdCtrl)
