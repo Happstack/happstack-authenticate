@@ -1,0 +1,39 @@
+name:                happstack-authenticate-demo
+version:             0.1.0.0
+synopsis:            A simple demostration of happstack-authenticate-2
+license:             BSD3
+license-file:        LICENSE
+author:              jeremy@n-heptane.com
+maintainer:          jeremy@n-heptane.com
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable happstack-authenticate-demo
+  main-is:             Main.hs
+  other-extensions:    DeriveDataTypeable, DeriveGeneric, FlexibleContexts, FlexibleInstances, OverlappingInstances, QuasiQuotes, TemplateHaskell, OverloadedStrings
+  build-depends:       base >=4.7 && <4.8,
+                       acid-state,
+                       aeson,
+                       bytestring >=0.10 && <0.11,
+                       containers >=0.5 && <0.6,
+                       data-default,
+                       happstack-authenticate >= 2.0 && < 2.1,
+                       happstack-hsp,
+                       happstack-jmacro,
+                       happstack-server,
+                       hsp,
+                       hsx-jmacro,
+                       hsx2hs,
+                       mtl,
+                       lens,
+                       jmacro,
+                       jwt,
+                       text >=1.2 && <1.3,
+                       threads,
+                       unordered-containers,
+                       wl-pprint-text,
+                       web-routes,
+                       web-routes-happstack,
+                       web-routes-th
+  default-language:    Haskell2010

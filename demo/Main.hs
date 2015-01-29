@@ -203,7 +203,7 @@ index = do
         <script src=(routeFn DemoAppJs [])></script>
         <script src=(routeFn (Authenticate Controllers) [])></script>
       </head>
-      <body ng-app="demoApp" ng-controller="UsernamePasswordCtrl">
+      <body ng-app="demoApp" ng-controller="AuthenticationCtrl">
        <nav class="navbar navbar-default" role="navigation">
          <div class="container-fluid">
             <up-login-inline />
@@ -262,9 +262,11 @@ index = do
 
 main :: IO ()
 main =
-  do (cleanup, routeAuthenticate, authenticateState) <- initAuthentication Nothing [ initPassword "http://localhost:8000/#resetPassword" "example.org"
-                                                                                   , initOpenId
-                                                                                   ]
+  do (cleanup, routeAuthenticate, authenticateState) <-
+       initAuthentication Nothing
+         [ initPassword "http://localhost:8000/#resetPassword" "example.org"
+         , initOpenId Nothing
+         ]
      (simpleHTTP nullConf $
       msum [ dir "js"        $ serveDirectory EnableBrowsing [] "js"
            , dir "bootstrap" $ serveDirectory EnableBrowsing [] "bootstrap"
