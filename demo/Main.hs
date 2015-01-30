@@ -205,10 +205,12 @@ index = do
       </head>
       <body ng-app="demoApp" ng-controller="AuthenticationCtrl">
        <nav class="navbar navbar-default" role="navigation">
-         <div class="container-fluid">
+         <div class="container-fluid" ng-controller="UsernamePasswordCtrl">
             <up-login-inline />
          </div>
        </nav>
+
+       <div ng-click="alert('foo');">click me</div>
 
        <div class="container-fluid">
          <div class="row">
@@ -221,35 +223,37 @@ index = do
            <div class="col-md-6">
              <div>
                <h1>Happstack Authentication Demo</h1>
-               <div up-authenticated=False>
-                 <p>This is a demonstration of the <code>happstack-authentication</code> library. You are currently not logged in.</p>
+               <div ng-controller="UsernamePasswordCtrl">
+                <div up-authenticated=False>
+                  <p>This is a demonstration of the <code>happstack-authentication</code> library. You are currently not logged in.</p>
 
-                 <p>If you don't have an account already you can signup:</p>
-                 <up-signup-password />
+                  <p>If you don't have an account already you can signup:</p>
+                  <up-signup-password />
 
-                 <p>If you have forgotten your password you can request it to be sent to your email address:</p>
-                 <up-request-reset-password />
+                  <p>If you have forgotten your password you can request it to be sent to your email address:</p>
+                  <up-request-reset-password />
 
-                 <div ng-controller="OpenIdCtrl">
-                   <p>You could also sign in using your Google OpenId:</p>
-                   <openid-google />
-                   <openid-yahoo />
-                 </div>
+                  <div ng-controller="OpenIdCtrl">
+                    <p>You could also sign in using your Google OpenId:</p>
+                    <openid-google />
+                    <openid-yahoo />
+                  </div>
 
-               </div>
+                </div>
 
-               <div up-authenticated=True>
-                 <p>You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout</a>. Or you can change your password here:</p>
+                <div up-authenticated=True>
+                  <p>You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout</a>. Or you can change your password here:</p>
 
-                 <up-change-password />
+                  <up-change-password />
 
-                 <p>You can also now access restricted content.</p>
+                  <p>You can also now access restricted content.</p>
 
-                 <div ng-controller="DemoAppCtrl">
-                   <a ng-click=("callRestricted('" <> (routeFn (Api Restricted) []) <> "')") href="">Shh, this is private!</a>
-                   <br />
-                   <div>{{message}}</div>
-                 </div>
+                  <div ng-controller="DemoAppCtrl">
+                    <a ng-click=("callRestricted('" <> (routeFn (Api Restricted) []) <> "')") href="">Shh, this is private!</a>
+                    <br />
+                    <div>{{message}}</div>
+                  </div>
+                </div>
                </div>
              </div>
            </div>
