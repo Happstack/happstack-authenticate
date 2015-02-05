@@ -244,7 +244,7 @@ makeLenses ''AuthenticateState
 initialAuthenticateState :: AuthenticateState
 initialAuthenticateState = AuthenticateState
     { _sharedSecrets             = initialSharedSecrets
-    , _users                     = IxSet.fromList [(User (UserId 0) (Username "stepcut") (Just $ Email "jeremy@n-heptane.com"))]
+    , _users                     = IxSet.empty
     , _nextUserId                = UserId 1
     , _defaultSessionTimeout     = 60*60
     , _newAccountMode            = OpenRegistration

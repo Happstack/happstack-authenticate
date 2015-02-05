@@ -102,7 +102,7 @@ makeLenses ''PasswordState
 
 initialPasswordState :: PasswordState
 initialPasswordState = PasswordState
-    { _passwords = Map.fromList [(UserId 0, HashedPass {_unHashedPass = "sha256|12|yR1jCpIvCOrhH285/QMwVw==|oSJVi3fypHEqtjXrtDU/iNApqcbwhxngW0bdhXmMS2A="})]
+    { _passwords = Map.empty
     }
 
 ------------------------------------------------------------------------------
