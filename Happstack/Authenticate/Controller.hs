@@ -40,6 +40,10 @@ authenticateCtrlJs showURL = [jmacro|
     happstackAuthentication.controller('AuthenticationCtrl', ['$scope', 'userService', function ($scope, userService) {
       $scope.isAuthenticated = userService.getUser().isAuthenticated;
       $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
+      $scope.claims = userService.getUser().claims;
+      $scope.$watch(function () { return userService.getUser().claims; },
+                     function(newVal, oldVal) { $scope.claims = newVal; }
+                   );
 
       $scope.logout = function () {
           userService.clearUser();
@@ -57,6 +61,16 @@ authenticateCtrlJs showURL = [jmacro|
 
       var service = {
         userCache: defaultUser,
+        userCacheInit: function () {
+          var item = localStorage.getItem('user');
+          if (item) {
+//            alert('getUser: ' + item);
+            this.setUser(JSON.parse(item));
+          } else {
+//            alert('no user saved.');
+            service.clearUser();
+          }
+        },
         updateFromToken: function (token) {
             var encodedClaims = token.split('.')[1];
             var claims = JSON.parse(url_base64_decode(encodedClaims));
@@ -72,28 +86,20 @@ authenticateCtrlJs showURL = [jmacro|
 
         setUser: function(u) {
 //          alert('setUser:' + JSON.stringify(u));
-          userCache = u;
+          this.userCache = u;
           localStorage.setItem('user', JSON.stringify(u));
         },
 
         getUser: function() {
-          var item = localStorage.getItem('user');
-          if (item) {
-//            alert('getUser: ' + item);
-            var user = JSON.parse(item);
-            return(user);
-          }
+          return(this.userCache);
         },
 
         clearUser: function () {
-          userCache = defaultUser;
           this.setUser(defaultUser);
         }
       };
 
-      if (!localStorage.getItem('user')) {
-        service.clearUser();
-      }
+      service.userCacheInit();
 
       return service;
     }]);

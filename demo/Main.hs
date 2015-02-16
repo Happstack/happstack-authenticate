@@ -203,7 +203,7 @@ index = do
         <script src=(routeFn DemoAppJs [])></script>
         <script src=(routeFn (Authenticate Controllers) [])></script>
       </head>
-      <body ng-app="demoApp" ng-controller="AuthenticationCtrl">
+      <body ng-app="demoApp" ng-controller="AuthenticationCtrl as auth">
        <nav class="navbar navbar-default" role="navigation">
          <div class="container-fluid" ng-controller="UsernamePasswordCtrl">
             <up-login-inline />
@@ -242,7 +242,7 @@ index = do
                 </div>
 
                 <div up-authenticated=True>
-                  <p>You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout</a>. Or you can change your password here:</p>
+                  <p>Hello {{claims.user.username}}. You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout {{claims.user.username}}</a>. Or you can change your password here:</p>
 
                   <up-change-password />
 
