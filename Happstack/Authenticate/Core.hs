@@ -369,6 +369,10 @@ getUserByEmail email =
     do us <- view users
        return $ getOne $ us @= email
 
+-- | get the entire AuthenticateState value
+getAuthenticateState :: Query AuthenticateState AuthenticateState
+getAuthenticateState = ask
+
 makeAcidic ''AuthenticateState
     [ 'setDefaultSessionTimeout
     , 'getDefaultSessionTimeout
@@ -383,6 +387,7 @@ makeAcidic ''AuthenticateState
     , 'getUserByUsername
     , 'getUserByUserId
     , 'getUserByEmail
+    , 'getAuthenticateState
     ]
 
 ------------------------------------------------------------------------------
