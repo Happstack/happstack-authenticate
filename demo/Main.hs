@@ -8,7 +8,7 @@ import Control.Lens (makeLenses)
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Trans
-import Data.Acid (AcidState)
+import Data.Acid (AcidState, query)
 import Data.Acid.Local (openLocalStateFrom, createCheckpointAndClose)
 import Data.Aeson
 import Data.Aeson.Types (ToJSON(..), FromJSON(..), Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
@@ -25,7 +25,7 @@ import qualified Data.Text.Encoding as T
 import Data.Unique
 import Data.Monoid ((<>))
 import GHC.Generics
-import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), decodeAndVerifyToken)
+import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken)
 import Happstack.Authenticate.Route (initAuthentication)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
 import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
@@ -111,7 +111,7 @@ api authenticateState =
             mToken <- decodeAndVerifyToken authenticateState (T.decodeUtf8 auth)
             case mToken of
               Nothing -> unauthorized $ toResponse ("You are not authorized." :: Text)
-              (Just (_user, jwt)) ->
+              (Just (_user, _, jwt)) ->
                   ok $ toJSONResponse $ Object $ HashMap.fromList [("name", toJSON (show jwt))]
 
 ------------------------------------------------------------------------------
@@ -253,6 +253,12 @@ index = do
                     <br />
                     <div>{{message}}</div>
                   </div>
+
+                  <div ng-controller="OpenIdCtrl">
+                    <p>If you are an admin you can edit the realm:</p>
+                    <openid-realm />
+                    <p>{{claims.authAdmin}}</p>
+                  </div>
                 </div>
                </div>
              </div>
@@ -267,10 +273,12 @@ index = do
 main :: IO ()
 main =
   do (cleanup, routeAuthenticate, authenticateState) <-
-       initAuthentication Nothing
+       initAuthentication Nothing (const $ return True)
          [ initPassword "http://localhost:8000/#resetPassword" "example.org"
-         , initOpenId Nothing
+         , initOpenId
          ]
+     as <- query authenticateState GetAuthenticateState
+     print as
      (simpleHTTP nullConf $
       msum [ dir "js"        $ serveDirectory EnableBrowsing [] "js"
            , dir "bootstrap" $ serveDirectory EnableBrowsing [] "bootstrap"

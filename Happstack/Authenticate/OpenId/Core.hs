@@ -2,10 +2,12 @@
 module Happstack.Authenticate.OpenId.Core where
 
 import Control.Applicative         (Alternative)
-import Control.Lens                ((?=), (^.), makeLenses, view, at)
+import Control.Monad               (msum)
+import Control.Lens                ((?=), (^.), (.=), makeLenses, view, at)
 import Control.Monad.Trans         (MonadIO(liftIO))
 import Data.Acid                   (AcidState, Query, Update, makeAcidic)
 import Data.Acid.Advanced          (query', update')
+import qualified Data.Aeson        as Aeson
 import Data.Aeson                  (Object(..), Value(..), decode, encode)
 import Data.Aeson.Types            (ToJSON(..), FromJSON(..), Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
 import Data.Data                   (Data, Typeable)
@@ -14,7 +16,7 @@ import Data.Map                    (Map)
 import qualified Data.Map          as Map
 import Data.Maybe                  (mapMaybe)
 import Data.Monoid                 ((<>))
-import Data.SafeCopy               (SafeCopy, base, deriveSafeCopy)
+import Data.SafeCopy               (Migrate(..), SafeCopy, base, extension, deriveSafeCopy)
 import qualified Data.Text               as T
 import           Data.Text               (Text)
 import qualified Data.Text.Encoding      as T
@@ -22,9 +24,9 @@ import qualified Data.Text.Lazy          as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Map          as Map
 import GHC.Generics                (Generic)
-import Happstack.Authenticate.Core (AuthenticateState, UserId(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N, addTokenCookie, jsonOptions, toJSONError, toJSONResponse, userId)
+import Happstack.Authenticate.Core (AuthenticateState, UserId(..), CoreError(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N(..), addTokenCookie, getToken, jsonOptions, toJSONError, toJSONSuccess, toJSONResponse, tokenIsAuthAdmin, userId)
 import Happstack.Authenticate.OpenId.URL
-import Happstack.Server            (Happstack, Response, badRequest, internalServerError, lookPairsBS, resp, toResponse, toResponseBS, ok)
+import Happstack.Server            (RqBody(..), Happstack, Method(..), Response, askRq, unauthorized, badRequest, internalServerError, forbidden, lookPairsBS, method, resp, takeRequestBody, toResponse, toResponseBS, ok)
 import Language.Javascript.JMacro
 import Network.HTTP.Conduit        (withManager)
 import Text.Shakespeare.I18N       (RenderMessage(..), Lang, mkMessageFor)
@@ -53,8 +55,7 @@ $(deriveSafeCopy 1 'base ''Identifier)
 
 data OpenIdError
   = UnknownIdentifier
-  | InvalidUserId
-
+  | CoreError { openIdErrorMessageE :: CoreError }
   deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   OpenIdError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON OpenIdError where parseJSON = genericParseJSON jsonOptions
@@ -68,16 +69,29 @@ mkMessageFor "HappstackAuthenticateI18N" "OpenIdError" "messages/openid/error" (
 -- OpenIdState
 ------------------------------------------------------------------------------
 
-data OpenIdState = OpenIdState
-    { _identifiers :: Map Identifier UserId
+data OpenIdState_1 = OpenIdState_1
+    { _identifiers_1 :: Map Identifier UserId
     }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-deriveSafeCopy 1 'base ''OpenIdState
+deriveSafeCopy 1 'base ''OpenIdState_1
+makeLenses ''OpenIdState_1
+
+data OpenIdState = OpenIdState
+    { _identifiers :: Map Identifier UserId
+    , _openIdRealm :: Maybe Text
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+deriveSafeCopy 2 'extension ''OpenIdState
 makeLenses ''OpenIdState
+
+instance Migrate OpenIdState where
+  type MigrateFrom OpenIdState = OpenIdState_1
+  migrate (OpenIdState_1 ids) = OpenIdState ids Nothing
 
 initialOpenIdState :: OpenIdState
 initialOpenIdState = OpenIdState
     { _identifiers = Map.fromList []
+    , _openIdRealm = Nothing
     }
 
 ------------------------------------------------------------------------------
@@ -91,9 +105,57 @@ associateIdentifierWithUserId :: Identifier -> UserId -> Update OpenIdState ()
 associateIdentifierWithUserId ident uid =
   identifiers . at ident ?= uid
 
-makeAcidic ''OpenIdState ['identifierToUserId
-                         ,'associateIdentifierWithUserId
-                         ]
+-- | Get the OpenId realm to use for authentication
+getOpenIdRealm :: Query OpenIdState (Maybe Text)
+getOpenIdRealm = view openIdRealm
+
+-- | set the realm used for OpenId Authentication
+--
+-- IMPORTANT: Changing this value after users have registered is
+-- likely to invalidate existing OpenId tokens resulting in users no
+-- longer being able to access their old accounts.
+setOpenIdRealm :: Maybe Text
+               -> Update OpenIdState ()
+setOpenIdRealm realm = openIdRealm .= realm
+
+makeAcidic ''OpenIdState
+  [ 'identifierToUserId
+  , 'associateIdentifierWithUserId
+  , 'getOpenIdRealm
+  , 'setOpenIdRealm
+  ]
+
+data SetRealmData = SetRealmData
+  { _srOpenIdRealm :: Maybe Text
+  }
+  deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''SetRealmData
+instance ToJSON   SetRealmData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON SetRealmData where parseJSON = genericParseJSON jsonOptions
+
+realm :: (Happstack m) =>
+         AcidState AuthenticateState
+      -> AcidState OpenIdState
+      -> m Response
+realm authenticateState openIdState =
+  do mt <- getToken authenticateState
+     case mt of
+       Nothing                -> unauthorized $ toJSONError (CoreError AuthorizationRequired)
+       (Just (token,_))
+         | token ^. tokenIsAuthAdmin == False -> forbidden $  toJSONError (CoreError Forbidden)
+         | otherwise ->
+            msum [ do method GET
+                      mRealm <- query' openIdState GetOpenIdRealm
+                      ok $ toJSONSuccess mRealm
+                 , do method POST
+                      (Just (Body body)) <- takeRequestBody =<< askRq
+                      case Aeson.decode body of
+                        Nothing   -> badRequest $ toJSONError (CoreError JSONDecodeFailed)
+                        (Just (SetRealmData mRealm)) ->
+                          do -- liftIO $ putStrLn $ "mRealm from JSON: " ++ show mRealm
+                             update' openIdState (SetOpenIdRealm mRealm)
+                             ok $ toJSONSuccess ()
+                 ]
 
 -- this get's the identifier the openid provider provides. It is our
 -- only chance to capture the Identifier. So, before we send a
@@ -108,10 +170,11 @@ getIdentifier =
        return (oirOpLocal oir)
 
 token :: (Alternative m, Happstack m) =>
-              AcidState AuthenticateState
-           -> AcidState OpenIdState
-           -> m Response
-token authenticateState openIdState =
+         AcidState AuthenticateState
+      -> (UserId -> IO Bool)
+      -> AcidState OpenIdState
+      -> m Response
+token authenticateState isAuthAdmin openIdState =
     do identifier <- getIdentifier
        mUserId <- query' openIdState (IdentifierToUserId identifier)
        mUser <- case mUserId of
@@ -127,8 +190,8 @@ token authenticateState openIdState =
                 (Just u) ->
                   return (Just u)
        case mUser of
-         Nothing     -> internalServerError $ toJSONError InvalidUserId
-         (Just user) -> do token <- addTokenCookie authenticateState user
+         Nothing     -> internalServerError $ toJSONError $ CoreError InvalidUserId
+         (Just user) -> do token <- addTokenCookie authenticateState isAuthAdmin user
                            let tokenBS = TL.encodeUtf8 $ TL.fromStrict token
 --                           ok $ toResponse token
                            ok $ toResponseBS "text/html" $ "<html><head><script type='text/javascript'>window.opener.tokenCB('" <> tokenBS <> "'); window.close();</script></head><body></body></html>"

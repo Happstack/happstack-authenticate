@@ -29,7 +29,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N, SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CoreError(..), CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N, SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -48,8 +48,7 @@ import Web.Routes.TH
 ------------------------------------------------------------------------------
 
 data PasswordError
-  = JSONDecodeFailed
-  | NotAuthenticated
+  = NotAuthenticated
   | NotAuthorized
   | InvalidUsername
   | InvalidPassword
@@ -58,6 +57,7 @@ data PasswordError
   | MissingResetToken
   | InvalidResetToken
   | PasswordMismatch
+  | CoreError CoreError
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   PasswordError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
@@ -178,13 +178,14 @@ instance ToJExpr UserPass where
 
 token :: (Happstack m) =>
          AcidState AuthenticateState
+      -> (UserId -> IO Bool)
       -> AcidState PasswordState
       -> m Response
-token authenticateState passwordState =
+token authenticateState isAuthAdmin passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
-       Nothing   -> badRequest $ toJSONError JSONDecodeFailed
+       Nothing   -> badRequest $ toJSONError (CoreError JSONDecodeFailed)
        (Just (UserPass username password)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
             case mUser of
@@ -193,7 +194,7 @@ token authenticateState passwordState =
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
                      then unauthorized $ toJSONError InvalidUsernamePassword
-                     else do token <- addTokenCookie authenticateState u
+                     else do token <- addTokenCookie authenticateState isAuthAdmin u
                              resp 201 $ toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
 
 ------------------------------------------------------------------------------
@@ -234,12 +235,15 @@ account authenticateState passwordState Nothing =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
-       Nothing               -> badRequest (Left JSONDecodeFailed)
+       Nothing               -> badRequest (Left $ CoreError JSONDecodeFailed)
        (Just newAccount) ->
-         do user <- update' authenticateState (CreateUser $ _naUser newAccount)
-            hashed <- mkHashedPass (_naPassword newAccount)
-            update' passwordState (SetPassword (user ^. userId) hashed)
-            ok $ (Right (user ^. userId))
+         do eUser <- update' authenticateState (CreateUser $ _naUser newAccount)
+            case eUser of
+              (Left e) -> return $ Left (CoreError e)
+              (Right user) -> do
+                hashed <- mkHashedPass (_naPassword newAccount)
+                update' passwordState (SetPassword (user ^. userId) hashed)
+                ok $ (Right (user ^. userId))
 -- handle updates to /account/<userId>/*
 account authenticateState passwordState (Just (uid, url)) =
   case url of
@@ -248,19 +252,19 @@ account authenticateState passwordState (Just (uid, url)) =
          mUser <- getToken authenticateState
          case mUser of
            Nothing     -> unauthorized (Left NotAuthenticated)
-           (Just (u, _)) ->
+           (Just (token, _)) ->
              -- here we could have fancier policies that allow super-users to change passwords
-             if ((u ^. userId) /= uid)
+             if ((token ^. tokenUser ^. userId) /= uid)
               then return (Left NotAuthorized)
               else do mBody <- takeRequestBody =<< askRq
                       case mBody of
-                        Nothing     -> badRequest (Left JSONDecodeFailed)
+                        Nothing     -> badRequest (Left $ CoreError JSONDecodeFailed)
                         (Just (Body body)) ->
                           case Aeson.decode body of
                             Nothing -> do -- liftIO $ print body
-                                          badRequest (Left JSONDecodeFailed)
+                                          badRequest (Left $ CoreError JSONDecodeFailed)
                             (Just changePassword) ->
-                              do b <- verifyPassword authenticateState passwordState (u ^. username) (changePassword ^. cpOldPassword)
+                              do b <- verifyPassword authenticateState passwordState (token ^. tokenUser ^. username) (changePassword ^. cpOldPassword)
                                  if not b
                                    then forbidden (Left InvalidPassword)
                                    else do pw <- mkHashedPass (changePassword ^. cpNewPassword)
@@ -291,7 +295,7 @@ passwordRequestReset resetLink domain authenticateState passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
-       Nothing   -> badRequest $ Left JSONDecodeFailed
+       Nothing   -> badRequest $ Left $ CoreError JSONDecodeFailed
        (Just (RequestResetPasswordData username)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
             case mUser of
@@ -357,7 +361,7 @@ passwordReset authenticateState passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
-       Nothing -> badRequest $ Left JSONDecodeFailed
+       Nothing -> badRequest $ Left $ CoreError JSONDecodeFailed
        (Just (ResetPasswordData password passwordConfirm resetToken)) ->
          do mUser <- decodeAndVerifyResetToken authenticateState resetToken
             case mUser of

@@ -2,6 +2,7 @@
 module Happstack.Authenticate.Password.Partials where
 
 import Control.Category                     ((.), id)
+import Control.Lens                         ((^.))
 import Control.Monad.Reader                 (ReaderT, ask, runReaderT)
 import Control.Monad.Trans                  (MonadIO, lift)
 import Data.Acid                            (AcidState)
@@ -14,7 +15,7 @@ import HSP
 import Happstack.Server.HSP.HTML            ()
 import Language.Haskell.HSX.QQ              (hsx)
 import Language.Javascript.JMacro
-import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, UserId(..), User(..), HappstackAuthenticateI18N(..), getToken)
+import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, UserId(..), User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
 import Happstack.Authenticate.Password.Core (PasswordError(NotAuthenticated))
 import Happstack.Authenticate.Password.URL  (AccountURL(..), PasswordURL(..), nestPasswordURL)
 import Happstack.Authenticate.Password.PartialsURL  (PartialURL(..))
@@ -63,12 +64,13 @@ routePartial :: (Functor m, Monad m, Happstack m) =>
 routePartial authenticateState url =
   case url of
     LoginInline    -> usernamePasswordForm
+    Logout         -> logoutForm
     SignupPassword -> signupPasswordForm
     ChangePassword ->
       do mUser <- getToken authenticateState
          case mUser of
            Nothing     -> [hsx| <p><% show NotAuthenticated %></p> |]
-           (Just (user, _)) -> changePasswordForm (_userId user)
+           (Just (token, _)) -> changePasswordForm (token ^. tokenUser ^. userId)
     RequestResetPasswordForm -> requestResetPasswordForm
     ResetPasswordForm -> resetPasswordForm
 
@@ -123,13 +125,14 @@ usernamePasswordForm = [hsx|
     </span>
   |]
 
-{-
+logoutForm ::  (Functor m, MonadIO m) => Partial m XML
+logoutForm = [hsx|
      <span ng-show="isAuthenticated">
       <div class="form-group">
        <a class="navbar-right" ng-click="logout()" href=""><% LogoutMsg %></a>
       </div>
      </span>
--}
+ |]
 
 changePasswordForm :: (Functor m, MonadIO m) =>
                       UserId

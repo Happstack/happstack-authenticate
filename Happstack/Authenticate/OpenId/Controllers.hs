@@ -1,27 +1,50 @@
 {-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
 module Happstack.Authenticate.OpenId.Controllers where
 
-import Data.Text                            (Text)
-import qualified Data.Text                  as T
-import Happstack.Authenticate.Core          (AuthenticateURL)
-import Happstack.Authenticate.OpenId.URL (OpenIdURL(BeginDance, Partial, ReturnTo), nestOpenIdURL)
-import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle, UsingYahoo))
+import Control.Lens                       ((^.))
+import Control.Monad.Trans                (MonadIO(..))
+import Data.Acid                          (AcidState)
+import Data.Acid.Advanced                 (query')
+import Data.Maybe                         (fromMaybe)
+import Data.Text                          (Text)
+import qualified Data.Text                as T
+import Happstack.Authenticate.Core        (AuthenticateState, AuthenticateURL, getToken, tokenIsAuthAdmin)
+import Happstack.Authenticate.OpenId.Core (GetOpenIdRealm(..), OpenIdState)
+import Happstack.Authenticate.OpenId.URL  (OpenIdURL(BeginDance, Partial, ReturnTo), nestOpenIdURL)
+import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle, UsingYahoo, RealmForm))
+import Happstack.Server                   (Happstack)
 import Language.Javascript.JMacro
 import Web.Routes
 
-openIdCtrl :: (Monad m) => RouteT AuthenticateURL m JStat
-openIdCtrl =
+openIdCtrl
+  :: (Happstack m) =>
+     AcidState AuthenticateState
+  -> AcidState OpenIdState
+  -> RouteT AuthenticateURL m JStat
+openIdCtrl authenticateState openIdState  =
   nestOpenIdURL $
     do fn <- askRouteFn
-       return $ openIdCtrlJs fn
+       mt <- getToken authenticateState
+       mRealm <- case mt of
+         (Just (token, _))
+           | token ^. tokenIsAuthAdmin ->
+               query' openIdState GetOpenIdRealm
+           | otherwise -> return Nothing
+         Nothing -> return Nothing
+       return $ openIdCtrlJs mRealm fn
 
-openIdCtrlJs :: (OpenIdURL -> [(Text, Maybe Text)] -> Text) -> JStat
-openIdCtrlJs showURL = [jmacro|
+openIdCtrlJs
+  :: Maybe Text
+  -> (OpenIdURL -> [(Text, Maybe Text)] -> Text)
+  -> JStat
+openIdCtrlJs mRealm showURL =
+  [jmacro|
     var openId = angular.module('openId', ['happstackAuthentication']);
     var openIdWindow;
     tokenCB = function (token) { alert('tokenCB: ' + token); };
 
     openId.controller('OpenIdCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
+        $scope.openIdRealm = { srOpenIdRealm: `(fromMaybe "" mRealm)` };
 //      $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
 //      $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
@@ -30,7 +53,16 @@ openIdCtrlJs showURL = [jmacro|
 //        openIdWindow = window.open(`(showURL ReturnTo [])`, "_blank", "toolbar=0");
         tokenCB = function(token) { var u = userService.updateFromToken(token); $scope.isAuthenticated = u.isAuthenticated; $scope.$apply(); };
         openIdWindow = window.open(providerUrl, "_blank", "toolbar=0");
-      }
+      };
+
+      $scope.setOpenIdRealm = function (setRealmUrl) {
+        $http.post(setRealmUrl, $scope.openIdRealm).
+          success(function(datum, status, headers,config) {
+           $scope.set_openid_realm_msg = 'Realm Updated.'; // FIXME -- I18N
+          }).
+          error(function (datum, status, headers, config) {
+            $scope.set_openid_realm_msg = datum.error;
+      })};
     }]);
 
     openId.directive('openidGoogle', ['$rootScope', function ($rootScope) {
@@ -44,6 +76,13 @@ openIdCtrlJs showURL = [jmacro|
       return {
         restrict: 'E',
         templateUrl: `(showURL (Partial UsingYahoo) [])`
+      };
+    }]);
+
+    openId.directive('openidRealm', ['$rootScope', function ($rootScope) {
+      return {
+        restrict: 'E',
+        templateUrl: `(showURL (Partial RealmForm) [])`
       };
     }]);
 

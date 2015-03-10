@@ -28,6 +28,7 @@ data OpenIdURL
   = Partial PartialURL
   | BeginDance Text
   | ReturnTo
+  | Realm
   deriving (Eq, Ord, Data, Typeable, Generic, Read, Show)
 
 makeBoomerangs ''OpenIdURL
@@ -37,6 +38,7 @@ openIdURL =
   (  "partial"     </> rPartial . partialURL
   <> "begin-dance" </> rBeginDance . anyText
   <> "return-to"   </> rReturnTo
+  <> "realm"       </> rRealm
   )
 
 instance PathInfo OpenIdURL where

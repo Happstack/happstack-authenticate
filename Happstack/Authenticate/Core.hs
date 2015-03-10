@@ -91,11 +91,17 @@ jsonOptions = defaultOptions { fieldLabelModifier = drop 1 }
 
 -- | convert a value to a JSON encoded 'Response'
 toJSONResponse :: (RenderMessage HappstackAuthenticateI18N e, ToJSON a) => Either e a -> Response
-toJSONResponse (Left e) = toResponseBS "application/json" (A.encode (A.object ["error" A..= renderMessage HappstackAuthenticateI18N ["en"] e]))
-toJSONResponse (Right a) = toResponseBS "application/json" (A.encode a)
+toJSONResponse (Left e)  = toJSONError   e
+toJSONResponse (Right a) = toJSONSuccess a
 
+-- | convert a value to a JSON encoded 'Response'
+toJSONSuccess :: (ToJSON a) => a -> Response
+toJSONSuccess a = toResponseBS "application/json" (A.encode a)
+
+-- | convert an error to a JSON encoded 'Response'
 toJSONError :: forall e. (RenderMessage HappstackAuthenticateI18N e) => e -> Response
-toJSONError e = toJSONResponse ((Left e) :: Either e ())
+toJSONError e = toResponseBS "application/json" (A.encode (A.object ["error" A..= renderMessage HappstackAuthenticateI18N ["en"] e]))
+
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -105,7 +111,6 @@ toJSONError e = toJSONResponse ((Left e) :: Either e ())
 -- | a 'UserId' uniquely identifies a user.
 newtype UserId = UserId { _unUserId :: Integer }
     deriving (Eq, Ord, Enum, Read, Show, Data, Typeable, Generic)
-
 deriveSafeCopy 1 'base ''UserId
 makeLenses ''UserId
 makeBoomerangs ''UserId
@@ -117,6 +122,7 @@ instance PathInfo UserId where
     toPathSegments (UserId i) = toPathSegments i
     fromPathSegments = UserId <$> fromPathSegments
 
+-- | get the next `UserId`
 succUserId :: UserId -> UserId
 succUserId (UserId i) = UserId (succ i)
 
@@ -129,6 +135,7 @@ newtype Username = Username { _unUsername :: Text }
       deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 deriveSafeCopy 1 'base ''Username
 makeLenses ''Username
+makeBoomerangs ''Username
 
 instance ToJSON   Username where toJSON (Username i) = toJSON i
 instance FromJSON Username where parseJSON v = Username <$> parseJSON v
@@ -141,6 +148,7 @@ instance PathInfo Username where
 -- Email
 ------------------------------------------------------------------------------
 
+-- | an `Email` address. No validation in performed.
 newtype Email = Email { _unEmail :: Text }
       deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 deriveSafeCopy 1 'base ''Email
@@ -183,6 +191,8 @@ instance Indexable UserIxs User where
 -- SharedSecret
 ------------------------------------------------------------------------------
 
+-- | The shared secret is used to encrypt a users data on a per-user basis.
+-- We can invalidate a JWT value by changing the shared secret.
 newtype SharedSecret = SharedSecret { _unSharedSecret :: Text }
       deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 deriveSafeCopy 1 'base ''SharedSecret
@@ -195,12 +205,16 @@ genSharedSecret :: (MonadIO m) => m SharedSecret
 genSharedSecret = liftIO $ E.catch genSharedSecretDevURandom (\(_::SomeException) -> genSharedSecretSysRandom)
 
 -- | Generate a 'SharedSecret' from @\/dev\/urandom@.
+--
+-- see: `genSharedSecret`
 genSharedSecretDevURandom :: IO SharedSecret
 genSharedSecretDevURandom = withFile "/dev/urandom" ReadMode $ \h -> do
                       secret <- B.hGet h 32
                       return $ SharedSecret . Text.decodeUtf8 . encode $ secret
 
 -- | Generate a 'SharedSecret' from 'System.Random'.
+--
+-- see: `genSharedSecret`
 genSharedSecretSysRandom :: IO SharedSecret
 genSharedSecretSysRandom = randomChars >>= return . SharedSecret . Text.decodeUtf8 . encode . B.pack
     where randomChars = sequence $ replicate 32 $ randomRIO ('\NUL', '\255')
@@ -209,15 +223,45 @@ genSharedSecretSysRandom = randomChars >>= return . SharedSecret . Text.decodeUt
 -- SharedSecrets
 ------------------------------------------------------------------------------
 
+-- | A map which stores the `SharedSecret` for each `UserId`
 type SharedSecrets = Map UserId SharedSecret
 
+-- | An empty `SharedSecrets`
 initialSharedSecrets :: SharedSecrets
 initialSharedSecrets = Map.empty
+
+------------------------------------------------------------------------------
+-- CoreError
+------------------------------------------------------------------------------
+
+-- | the `CoreError` type is used to represent errors in a language
+-- agnostic manner. The errors are translated into human readable form
+-- via the I18N translations.
+data CoreError
+  = HandlerNotFound -- AuthenticationMethod
+  | URLDecodeFailed
+  | UsernameAlreadyExists
+  | AuthorizationRequired
+  | Forbidden
+  | JSONDecodeFailed
+  | InvalidUserId
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
+instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
+
+instance ToJExpr CoreError where
+    toJExpr = toJExpr . toJSON
+
+deriveSafeCopy 0 'base ''CoreError
+
+mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
 
 ------------------------------------------------------------------------------
 -- NewAccountMode
 ------------------------------------------------------------------------------
 
+-- | This value is used to configure the type of new user registrations
+-- permitted for this system.
 data NewAccountMode
   = OpenRegistration      -- ^ new users can create their own accounts
   | ModeratedRegistration -- ^ new users can apply to create their own accounts, but a moderator must approve them before they are active
@@ -229,12 +273,14 @@ deriveSafeCopy 1 'base ''NewAccountMode
 -- AuthenticateState
 ------------------------------------------------------------------------------
 
+-- | this acid-state value contains the state common to all
+-- authentication methods
 data AuthenticateState = AuthenticateState
     { _sharedSecrets             :: SharedSecrets
     , _users                     :: IxUser
     , _nextUserId                :: UserId
     , _defaultSessionTimeout     :: Int     -- ^ default session time out in seconds
-    , _newAccountMode :: NewAccountMode
+    , _newAccountMode            :: NewAccountMode
     }
     deriving (Eq, Show, Typeable, Generic)
 deriveSafeCopy 1 'base ''AuthenticateState
@@ -304,15 +350,19 @@ getNewAccountMode =
 -- | Create a new 'User'. This will allocate a new 'UserId'. The
 -- returned 'User' value will have the updated 'UserId'.
 createUser :: User
-           -> Update AuthenticateState User
+           -> Update AuthenticateState (Either CoreError User)
 createUser u =
   do as@AuthenticateState{..} <- get
-     let user' = set userId _nextUserId u
-         as' = as { _users      = IxSet.insert user' _users
-                  , _nextUserId = succ _nextUserId
-                  }
-     put as'
-     return user'
+     if IxSet.null $ (as ^. users) @= (u ^. username)
+       then do
+         let user' = set userId _nextUserId u
+             as' = as { _users      = IxSet.insert user' _users
+                      , _nextUserId = succ _nextUserId
+                      }
+         put as'
+         return (Right user')
+       else
+         return (Left UsernameAlreadyExists)
 
 -- | Create a new 'User'. This will allocate a new 'UserId'. The
 -- returned 'User' value will have the updated 'UserId'.
@@ -412,65 +462,110 @@ getOrGenSharedSecret authenticateState uid =
 -- Token Functions
 ------------------------------------------------------------------------------
 
+-- | The `Token` type represents the encrypted data used to identify a
+-- user.
+data Token = Token
+  { _tokenUser        :: User
+  , _tokenIsAuthAdmin :: Bool
+  }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''Token
+instance ToJSON   Token where toJSON    = genericToJSON    jsonOptions
+instance FromJSON Token where parseJSON = genericParseJSON jsonOptions
+
+-- | `TokenText` is the encrypted form of the `Token` which is passed
+-- between the server and the client.
 type TokenText = Text
 
+-- | create a `Token` for `User`
+--
+-- The @isAuthAdmin@ paramater is a function which will be called to
+-- determine if `UserId` is a user who should be given Administrator
+-- privileges. This includes the ability to things such as set the
+-- `OpenId` realm, change the registeration mode, etc.
 issueToken :: (MonadIO m) =>
               AcidState AuthenticateState
-           -> User
+           -> (UserId -> IO Bool)          -- ^ isAuthAdmin function
+           -> User                         -- ^ the user
            -> m TokenText
-issueToken authenticateState user =
+issueToken authenticateState isAuthAdmin user =
   do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
-     let claims = def { unregisteredClaims = Map.fromList [("user", toJSON user)] }
+     admin   <- liftIO $ isAuthAdmin (user ^. userId)
+     let claims = def { unregisteredClaims =
+                           Map.fromList [ ("user"     , toJSON user)
+                                        , ("authAdmin", toJSON admin)
+                                        ] }
      return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 
+-- | decode and verify the `TokenText`. If successful, return the
+-- `Token` otherwise `Nothing`.
 decodeAndVerifyToken :: (MonadIO m) =>
                         AcidState AuthenticateState
                      -> TokenText
-                     -> m (Maybe (User, JWT VerifiedJWT))
+                     -> m (Maybe (Token, JWT VerifiedJWT))
 decodeAndVerifyToken authenticateState token =
-  do let mUnverified = decode token
+  do -- decode unverified token
+     let mUnverified = decode token
      case mUnverified of
        Nothing -> return Nothing
        (Just unverified) ->
+         -- check that token has user claim
          case Map.lookup "user" (unregisteredClaims (claims unverified)) of
            Nothing -> return Nothing
            (Just uv) ->
+             -- decode user json value
              case fromJSON uv of
                (Error _) -> return Nothing
                (Success u) ->
-                 do mssecret <- query' authenticateState (GetSharedSecret (u ^. userId))
+                 do -- get the shared secret for userId
+                    mssecret <- query' authenticateState (GetSharedSecret (u ^. userId))
                     case mssecret of
                       Nothing -> return Nothing
                       (Just ssecret) ->
+                        -- finally we can verify all the claims
                         case verify (secret (_unSharedSecret ssecret)) unverified of
                           Nothing -> return Nothing
-                          (Just verified) -> return (Just (u, verified))
+                          (Just verified) ->
+                            case Map.lookup "authAdmin" (unregisteredClaims (claims verified)) of
+                              Nothing -> return (Just (Token u False, verified))
+                              (Just a) ->
+                                case fromJSON a of
+                                  (Error _) -> return (Just (Token u False, verified))
+                                  (Success b) -> return (Just (Token u b, verified))
 
 ------------------------------------------------------------------------------
 -- Token in a Cookie
 ------------------------------------------------------------------------------
 
+-- | name of the `Cookie` used to hold the `TokenText`
 authCookieName :: String
 authCookieName = "atc"
 
+-- | create a `Token` for `User` and add a `Cookie` to the `Response`
+--
+-- see also: `issueToken`
 addTokenCookie :: (Happstack m) =>
                   AcidState AuthenticateState
+               -> (UserId -> IO Bool)
                -> User
                -> m TokenText
-addTokenCookie authenticateState user =
-  do token <- issueToken authenticateState user
+addTokenCookie authenticateState isAuthAdmin user =
+  do token <- issueToken authenticateState isAuthAdmin user
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
      addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
      return token
 
+-- | delete the `Token` `Cookie`
 deleteTokenCookie  :: (Happstack m) =>
                       m ()
 deleteTokenCookie =
   expireCookie authCookieName
 
+
+-- | get, decode, and verify the `Token` from the `Cookie`.
 getTokenCookie :: (Happstack m) =>
                    AcidState AuthenticateState
-                -> m (Maybe (User, JWT VerifiedJWT))
+                -> m (Maybe (Token, JWT VerifiedJWT))
 getTokenCookie authenticateState =
   do mToken <- optional $ lookCookieValue authCookieName
      case mToken of
@@ -481,9 +576,11 @@ getTokenCookie authenticateState =
 ------------------------------------------------------------------------------
 -- Token in a Header
 ------------------------------------------------------------------------------
+
+-- | get, decode, and verify the `Token` from the @Authorization@ HTTP header
 getTokenHeader :: (Happstack m) =>
                   AcidState AuthenticateState
-               -> m (Maybe (User, JWT VerifiedJWT))
+               -> m (Maybe (Token, JWT VerifiedJWT))
 getTokenHeader authenticateState =
   do mAuth <- getHeaderM "Authorization"
      case mAuth of
@@ -496,19 +593,26 @@ getTokenHeader authenticateState =
 -- Token in a Header or Cookie
 ------------------------------------------------------------------------------
 
+-- | get, decode, and verify the `Token` looking first in the
+-- @Authorization@ header and then in `Cookie`.
+--
+-- see also: `getTokenHeader`, `getTokenCookie`
 getToken :: (Happstack m) =>
             AcidState AuthenticateState
-         -> m (Maybe (User, JWT VerifiedJWT))
+         -> m (Maybe (Token, JWT VerifiedJWT))
 getToken authenticateState =
   do mToken <- getTokenHeader authenticateState
      case mToken of
        Nothing      -> getTokenCookie authenticateState
        (Just token) -> return (Just token)
 
-
 ------------------------------------------------------------------------------
 -- helper function: calls `getToken` but only returns the `UserId`
 ------------------------------------------------------------------------------
+
+-- | get the `UserId`
+--
+-- calls `getToken` but returns only the `UserId`
 getUserId :: (Happstack m) =>
              AcidState AuthenticateState
           -> m (Maybe UserId)
@@ -516,15 +620,18 @@ getUserId authenticateState =
   do mToken <- getToken authenticateState
      case mToken of
        Nothing       -> return Nothing
-       (Just (u, _)) -> return $ Just (u ^. userId)
+       (Just (token, _)) -> return $ Just (token ^. tokenUser ^. userId)
 
 
 ------------------------------------------------------------------------------
 -- AuthenticationMethod
 ------------------------------------------------------------------------------
 
-newtype AuthenticationMethod = AuthenticationMethod { _unAuthenticationMethod :: Text }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+-- | `AuthenticationMethod` is used by the routing system to select which
+-- authentication backend should handle this request.
+newtype AuthenticationMethod = AuthenticationMethod
+  { _unAuthenticationMethod :: Text }
+  deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 derivePathInfo ''AuthenticationMethod
 deriveSafeCopy 1 'base ''AuthenticationMethod
 makeLenses ''AuthenticationMethod
@@ -536,7 +643,6 @@ instance FromJSON AuthenticationMethod where parseJSON v = AuthenticationMethod 
 type AuthenticationHandler = [Text] -> RouteT AuthenticateURL (ServerPartT IO) Response
 
 type AuthenticationHandlers = Map AuthenticationMethod AuthenticationHandler
-
 
 ------------------------------------------------------------------------------
 -- AuthenticationURL
@@ -550,6 +656,7 @@ data AuthenticateURL
 
 makeBoomerangs ''AuthenticateURL
 
+-- | a `Router` for `AuthenicateURL`
 authenticateURL :: Router () (AuthenticateURL :- ())
 authenticateURL =
   (  -- "users" </> (  rUsers . rMaybe userId )
@@ -564,25 +671,11 @@ instance PathInfo AuthenticateURL where
   fromPathSegments = boomerangFromPathSegments authenticateURL
   toPathSegments   = boomerangToPathSegments   authenticateURL
 
+-- | helper function which converts a URL for an authentication
+-- backend into an `AuthenticateURL`.
 nestAuthenticationMethod :: (PathInfo methodURL) =>
                             AuthenticationMethod
                          -> RouteT methodURL m a
                          -> RouteT AuthenticateURL m a
 nestAuthenticationMethod authenticationMethod =
   nestURL $ \methodURL -> AuthenticationMethods $ Just (authenticationMethod, toPathSegments methodURL)
-
-------------------------------------------------------------------------------
--- CoreError
-------------------------------------------------------------------------------
-
-data CoreError
-  = HandlerNotFound -- AuthenticationMethod
-  | URLDecodeFailed
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
-instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
-
-instance ToJExpr CoreError where
-    toJExpr = toJExpr . toJSON
-
-mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")

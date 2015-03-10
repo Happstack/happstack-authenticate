@@ -1,4 +1,3 @@
-JSONDecodeFailed: Failed to decode JSON data
 NotAuthenticated: Not Authenticated
 NotAuthorized: Not Authorized
 InvalidUsername: Invalid Username
