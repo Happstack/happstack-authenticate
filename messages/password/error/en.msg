@@ -7,3 +7,5 @@ NoEmailAddress: No email address found
 MissingResetToken: Missing reset token
 InvalidResetToken: Invalid reset token
 PasswordMismatch: Passwords do not match
+CoreError e@CoreError: #{renderMessage HappstackAuthenticateI18N ["en"] e}
+

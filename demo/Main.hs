@@ -4,7 +4,7 @@ module Main where
 import Control.Applicative
 import Control.Exception (bracket, finally)
 import Control.Concurrent.Thread.Group (ThreadGroup, new)
-import Control.Lens (makeLenses)
+import Control.Lens ((^.), makeLenses)
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Trans
@@ -25,7 +25,7 @@ import qualified Data.Text.Encoding as T
 import Data.Unique
 import Data.Monoid ((<>))
 import GHC.Generics
-import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken)
+import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken, tokenUser)
 import Happstack.Authenticate.Route (initAuthentication)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
 import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
@@ -111,7 +111,7 @@ api authenticateState =
             mToken <- decodeAndVerifyToken authenticateState (T.decodeUtf8 auth)
             case mToken of
               Nothing -> unauthorized $ toResponse ("You are not authorized." :: Text)
-              (Just (_user, _, jwt)) ->
+              (Just (_, jwt)) ->
                   ok $ toJSONResponse $ Object $ HashMap.fromList [("name", toJSON (show jwt))]
 
 ------------------------------------------------------------------------------

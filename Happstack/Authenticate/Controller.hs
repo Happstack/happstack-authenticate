@@ -54,13 +54,9 @@ authenticateCtrlJs showURL = [jmacro|
 
     // add userService
     happstackAuthentication.factory('userService', ['$rootScope', function ($rootScope) {
-      var defaultUser = { isAuthenticated: false,
-                          claims:          {},
-                          token:           null
-                        };
 
       var service = {
-        userCache: defaultUser,
+        userCache: null,
         userCacheInit: function () {
           var item = localStorage.getItem('user');
           if (item) {
@@ -95,7 +91,11 @@ authenticateCtrlJs showURL = [jmacro|
         },
 
         clearUser: function () {
-          this.setUser(defaultUser);
+//          alert('clearUser');
+          this.setUser({ isAuthenticated: false,
+                          claims:          {},
+                          token:           null
+                        });
         }
       };
 
