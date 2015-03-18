@@ -13,6 +13,7 @@ import Happstack.Authenticate.Password.Partials (routePartial)
 import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
 import Happstack.Server.JMacro ()
 import HSP                   (unXMLGenT)
+import HSP.HTML4             (html4StrictFrag)
 import Language.Javascript.JMacro (JStat)
 import System.FilePath       (combine)
 import Text.Shakespeare.I18N (Lang)
@@ -37,7 +38,8 @@ routePassword resetLink domain authenticateState isAuthAdmin passwordState pathS
       case url of
         Token        -> token authenticateState isAuthAdmin passwordState
         Account mUrl -> toJSONResponse <$> account authenticateState passwordState mUrl
-        (Partial u)  -> toResponse <$> unXMLGenT (routePartial authenticateState u)
+        (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
+                           ok $ toResponse (html4StrictFrag, xml)
         PasswordRequestReset -> toJSONResponse <$> passwordRequestReset resetLink domain authenticateState passwordState
         PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState
         UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl

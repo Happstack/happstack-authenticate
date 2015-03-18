@@ -68,6 +68,7 @@ openIdCtrlJs mRealm showURL =
     openId.directive('openidGoogle', ['$rootScope', function ($rootScope) {
       return {
         restrict: 'E',
+        replace: true,
         templateUrl: `(showURL (Partial UsingGoogle) [])`
       };
     }]);
@@ -75,6 +76,7 @@ openIdCtrlJs mRealm showURL =
     openId.directive('openidYahoo', ['$rootScope', function ($rootScope) {
       return {
         restrict: 'E',
+        replace: true,
         templateUrl: `(showURL (Partial UsingYahoo) [])`
       };
     }]);

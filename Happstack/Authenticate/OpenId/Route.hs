@@ -15,7 +15,8 @@ import Happstack.Authenticate.OpenId.URL (OpenIdURL(..), openIdAuthenticationMet
 import Happstack.Authenticate.OpenId.Partials (routePartial)
 import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse, seeOther)
 import Happstack.Server.JMacro ()
-import HSP                   (unXMLGenT)
+import HSP                        (unXMLGenT)
+import HSP.HTML4                  (html4StrictFrag)
 import Language.Javascript.JMacro (JStat)
 import Network.HTTP.Conduit        (withManager)
 import System.FilePath       (combine)
@@ -38,7 +39,9 @@ routeOpenId authenticateState isAuthAdmin openIdState pathSegments =
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
       case url of
-        (Partial u) -> toResponse <$> unXMLGenT (routePartial authenticateState openIdState u)
+        (Partial u) ->
+           do xml <- unXMLGenT (routePartial authenticateState openIdState u)
+              ok $ toResponse (html4StrictFrag, xml)
         (BeginDance providerURL) ->
           do returnURL <- nestOpenIdURL $ showURL ReturnTo
              realm <- query' openIdState GetOpenIdRealm

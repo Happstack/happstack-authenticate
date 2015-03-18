@@ -146,7 +146,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
     usernamePassword.directive('upLogout', ['$rootScope', 'userService', function ($rootScope, userService) {
       return {
         restrict: 'E',
-//        replace: true,
+        replace: true,
         templateUrl: `(showURL (Partial Logout) [])`
       };
     }]);
@@ -155,7 +155,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
     usernamePassword.directive('upLoginInline', ['$rootScope', 'userService', function ($rootScope, userService) {
       return {
         restrict: 'E',
-//        replace: true,
+        replace: true,
         templateUrl: `(showURL (Partial LoginInline) [])`
       };
     }]);
