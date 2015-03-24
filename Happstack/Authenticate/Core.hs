@@ -79,9 +79,6 @@ import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
 
-instance ToJExpr Text where
-  toJExpr t = toJExpr (Text.unpack t)
-
 data HappstackAuthenticateI18N = HappstackAuthenticateI18N
 
 -- | when creating JSON field names, drop the first character. Since
