@@ -49,14 +49,13 @@ initAuthentication
   -> [FilePath -> AcidState AuthenticateState -> (UserId -> IO Bool) -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
   -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState)
 initAuthentication mBasePath isAuthAdmin initMethods =
-  do let authenticatePath = combine (fromMaybe "_local" mBasePath) "authenticate"
+  do let authenticatePath = combine (fromMaybe "state" mBasePath) "authenticate"
      authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
      -- FIXME: need to deal with one of the initMethods throwing an exception
      (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState isAuthAdmin) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
          h       = route javascript (Map.fromList handlers)
      return (cleanup, h, authenticateState)
-
 
 instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where
  nextInteger =
