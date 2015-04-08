@@ -11,7 +11,7 @@ let pkg = haskellngPackages.callPackage
              }:
              mkDerivation {
                pname = "happstack-authenticate";
-               version = "2.1.2";
+               version = "2.1.3";
                src = ./.;
                buildDepends = [
                  acid-state aeson authenticate base base64-bytestring boomerang
