@@ -7,17 +7,14 @@ License:             BSD3
 License-file:        LICENSE
 Author:              Jeremy Shaw.
 Maintainer:          jeremy@seereason.com
-Copyright:           2011 SeeReason Partners, LLC
+Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.6
 
-
 source-repository head
-    type:     darcs
-    subdir:   happstack-authenticate
-    location: http://hub.darcs.net/stepcut/happstack
-
+    type:     git
+    location: https://github.com/Happstack/happstack-authenticate.git
 
 Library
   Exposed-modules:     Happstack.Authenticate.Core
