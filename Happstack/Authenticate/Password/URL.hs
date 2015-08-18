@@ -3,11 +3,12 @@ module Happstack.Authenticate.Password.URL where
 
 import Control.Category                ((.), id)
 import Data.Data     (Data, Typeable)
+import Data.UserId   (UserId(..), rUserId)
 import GHC.Generics  (Generic)
 import Prelude                         hiding ((.), id)
 import Web.Routes    (RouteT(..))
 import Web.Routes.TH (derivePathInfo)
-import Happstack.Authenticate.Core          (AuthenticateURL, AuthenticationMethod(..), UserId(..), nestAuthenticationMethod, rUserId)
+import Happstack.Authenticate.Core          (AuthenticateURL, AuthenticationMethod(..), nestAuthenticationMethod)
 import Happstack.Authenticate.Password.PartialsURL (PartialURL(..), partialURL)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Web.Routes                      (PathInfo(..))

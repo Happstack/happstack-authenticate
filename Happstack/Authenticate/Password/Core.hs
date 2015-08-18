@@ -28,8 +28,9 @@ import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
+import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CoreError(..), CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), UserId(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CoreError(..), CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro

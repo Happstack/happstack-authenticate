@@ -9,13 +9,14 @@ import Data.Acid                            (AcidState)
 import Data.Data                            (Data, Typeable)
 import Data.Monoid                          ((<>))
 import Data.Text                            (Text)
+import Data.UserId                          (UserId)
 import qualified Data.Text                  as Text
 import qualified Data.Text.Lazy             as LT
 import HSP
 import Happstack.Server.HSP.HTML            ()
 import Language.Haskell.HSX.QQ              (hsx)
 import Language.Javascript.JMacro
-import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, UserId(..), User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
+import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
 import Happstack.Authenticate.Password.Core (PasswordError(NotAuthenticated))
 import Happstack.Authenticate.Password.URL  (AccountURL(..), PasswordURL(..), nestPasswordURL)
 import Happstack.Authenticate.Password.PartialsURL  (PartialURL(..))

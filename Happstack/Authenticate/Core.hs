@@ -32,7 +32,82 @@ fetch the partials for the extra information.
 
 -}
 
-module Happstack.Authenticate.Core where
+module Happstack.Authenticate.Core
+    ( HappstackAuthenticateI18N(..)
+    , UserId(..)
+    , unUserId
+    , rUserId
+    , succUserId
+    , jsonOptions
+    , toJSONResponse
+    , toJSONSuccess
+    , toJSONError
+    , Username(..)
+    , unUsername
+    , rUsername
+    , Email(..)
+    , unEmail
+    , User(..)
+    , userId
+    , username
+    , email
+    , UserIxs
+    , IxUser
+    , SharedSecret(..)
+    , unSharedSecret
+    , genSharedSecret
+    , genSharedSecretDevURandom
+    , genSharedSecretSysRandom
+    , SharedSecrets
+    , initialSharedSecrets
+    , CoreError(..)
+    , NewAccountMode(..)
+    , AuthenticateState(..)
+    , sharedSecrets
+    , users
+    , nextUserId
+    , defaultSessionTimeout
+    , newAccountMode
+    , initialAuthenticateState
+    , SetSharedSecret(..)
+    , GetSharedSecret(..)
+    , SetDefaultSessionTimeout(..)
+    , GetDefaultSessionTimeout(..)
+    , SetNewAccountMode(..)
+    , GetNewAccountMode(..)
+    , CreateUser(..)
+    , CreateAnonymousUser(..)
+    , UpdateUser(..)
+    , DeleteUser(..)
+    , GetUserByUsername(..)
+    , GetUserByUserId(..)
+    , GetUserByEmail(..)
+    , GetAuthenticateState(..)
+    , getOrGenSharedSecret
+    , Token(..)
+    , tokenUser
+    , tokenIsAuthAdmin
+    , TokenText
+    , issueToken
+    , decodeAndVerifyToken
+    , authCookieName
+    , addTokenCookie
+    , deleteTokenCookie
+    , getTokenCookie
+    , getTokenHeader
+    , getToken
+    , getUserId
+    , AuthenticationMethod(..)
+    , unAuthenticationMethod
+    , rAuthenticationMethod
+    , AuthenticationHandler
+    , AuthenticationHandlers
+    , AuthenticateURL(..)
+    , rAuthenticationMethods
+    , rControllers
+    , authenticateURL
+    , nestAuthenticationMethod
+    ) where
 
 import Control.Applicative             (Applicative(pure), Alternative, (<$>), optional)
 import Control.Category                ((.), id)
@@ -65,6 +140,7 @@ import Data.Text                       (Text)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
 import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
+import Data.UserId                     (UserId(..), rUserId, succUserId, unUserId)
 import GHC.Generics                    (Generic)
 import Happstack.Server                (Cookie(secure), CookieLife(Session, MaxAge), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
 import Language.Javascript.JMacro
@@ -104,7 +180,7 @@ toJSONError e = toResponseBS "application/json" (A.encode (A.object ["error" A..
 ------------------------------------------------------------------------------
 -- UserId
 ------------------------------------------------------------------------------
-
+{-
 -- | a 'UserId' uniquely identifies a user.
 newtype UserId = UserId { _unUserId :: Integer }
     deriving (Eq, Ord, Enum, Read, Show, Data, Typeable, Generic)
@@ -122,7 +198,7 @@ instance PathInfo UserId where
 -- | get the next `UserId`
 succUserId :: UserId -> UserId
 succUserId (UserId i) = UserId (succ i)
-
+-}
 ------------------------------------------------------------------------------
 -- Username
 ------------------------------------------------------------------------------

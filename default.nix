@@ -5,7 +5,7 @@
 , http-types, ixset-typed, jmacro, jwt, lens, mime-mail, mtl
 , pwstore-purehaskell, random, safecopy, shakespeare, stdenv, text
 , time, unordered-containers, web-routes, web-routes-boomerang
-, web-routes-happstack, web-routes-hsp, web-routes-th
+, web-routes-happstack, web-routes-hsp, web-routes-th, userid
 }:
 mkDerivation {
   pname = "happstack-authenticate";
@@ -18,7 +18,7 @@ mkDerivation {
     http-conduit http-types ixset-typed jmacro jwt lens mime-mail mtl
     pwstore-purehaskell random safecopy shakespeare text time
     unordered-containers web-routes web-routes-boomerang
-    web-routes-happstack web-routes-hsp web-routes-th
+    web-routes-happstack web-routes-hsp web-routes-th userid
   ];
   homepage = "http://www.happstack.com/";
   description = "Happstack Authentication Library";

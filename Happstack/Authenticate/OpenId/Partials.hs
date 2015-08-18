@@ -10,13 +10,14 @@ import Data.Data                            (Data, Typeable)
 import Data.Monoid                          ((<>))
 import Data.Maybe                           (fromMaybe)
 import Data.Text                            (Text)
+import Data.UserId                          (UserId)
 import qualified Data.Text                  as Text
 import qualified Data.Text.Lazy             as LT
 import HSP
 import Happstack.Server.HSP.HTML            ()
 import Language.Haskell.HSX.QQ              (hsx)
 import Language.Javascript.JMacro
-import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, UserId(..), User(..), HappstackAuthenticateI18N(..), getToken)
+import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, User(..), HappstackAuthenticateI18N(..), getToken)
 import Happstack.Authenticate.OpenId.Core   (OpenIdState(..), GetOpenIdRealm(..))
 import Happstack.Authenticate.OpenId.URL    (OpenIdURL(..), nestOpenIdURL)
 import Happstack.Authenticate.OpenId.PartialsURL  (PartialURL(..))

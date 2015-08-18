@@ -23,8 +23,9 @@ import qualified Data.Text.Encoding      as T
 import qualified Data.Text.Lazy          as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Map          as Map
+import Data.UserId                 (UserId)
 import GHC.Generics                (Generic)
-import Happstack.Authenticate.Core (AuthenticateState, UserId(..), CoreError(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N(..), addTokenCookie, getToken, jsonOptions, toJSONError, toJSONSuccess, toJSONResponse, tokenIsAuthAdmin, userId)
+import Happstack.Authenticate.Core (AuthenticateState, CoreError(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N(..), addTokenCookie, getToken, jsonOptions, toJSONError, toJSONSuccess, toJSONResponse, tokenIsAuthAdmin, userId)
 import Happstack.Authenticate.OpenId.URL
 import Happstack.Server            (RqBody(..), Happstack, Method(..), Response, askRq, unauthorized, badRequest, internalServerError, forbidden, lookPairsBS, method, resp, takeRequestBody, toResponse, toResponseBS, ok)
 import Language.Javascript.JMacro
