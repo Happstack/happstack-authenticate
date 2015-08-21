@@ -28,7 +28,6 @@ Library
                        Happstack.Authenticate.Route
                        Happstack.Authenticate.Password.Controllers
                        Happstack.Authenticate.Password.Core
-                       Happstack.Authenticate.Password.Forms
                        Happstack.Authenticate.Password.Partials
                        Happstack.Authenticate.Password.PartialsURL
                        Happstack.Authenticate.Password.Route
