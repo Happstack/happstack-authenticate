@@ -64,7 +64,8 @@ routePartial :: (Functor m, Monad m, Happstack m) =>
              -> Partial m XML
 routePartial authenticateState url =
   case url of
-    LoginInline    -> usernamePasswordForm
+    LoginInline    -> usernamePasswordForm True
+    Login          -> usernamePasswordForm False
     Logout         -> logoutForm
     SignupPassword -> signupPasswordForm
     ChangePassword ->
@@ -104,11 +105,12 @@ signupPasswordForm =
   |]
 
 usernamePasswordForm :: (Functor m, Monad m) =>
-                        Partial m XML
-usernamePasswordForm = [hsx|
+                        Bool
+                     -> Partial m XML
+usernamePasswordForm inline = [hsx|
     <span>
      <span ng-show="!isAuthenticated">
-      <form ng-submit="login()" role="form" class="navbar-form navbar-left">
+      <form ng-submit="login()" role="form"  (if inline then ["class" := "navbar-form navbar-left"] :: [Attr Text Text] else [])>
        <div class="form-group">
         <label class="sr-only" for="username"><% UsernameMsg %> </label>
         <input class="form-control" ng-model="user.user" type="text" id="username" name="user" placeholder=UsernameMsg />

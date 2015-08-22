@@ -5,7 +5,7 @@ import Data.Text                            (Text)
 import qualified Data.Text                  as T
 import Happstack.Authenticate.Core          (AuthenticateURL)
 import Happstack.Authenticate.Password.URL (PasswordURL(Account, Token, Partial, PasswordReset, PasswordRequestReset), nestPasswordURL)
-import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, Logout, LoginInline, SignupPassword, ResetPasswordForm, RequestResetPasswordForm))
+import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, Logout, Login, LoginInline, SignupPassword, ResetPasswordForm, RequestResetPasswordForm))
 import Language.Javascript.JMacro
 import Web.Routes
 
@@ -148,6 +148,15 @@ usernamePasswordCtrlJs showURL = [jmacro|
         restrict: 'E',
         replace: true,
         templateUrl: `(showURL (Partial Logout) [])`
+      };
+    }]);
+
+    // upLogin directive
+    usernamePassword.directive('upLogin', ['$rootScope', 'userService', function ($rootScope, userService) {
+      return {
+        restrict: 'E',
+        replace: true,
+        templateUrl: `(showURL (Partial Login) [])`
       };
     }]);
 

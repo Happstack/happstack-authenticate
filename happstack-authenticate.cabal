@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.1.5
+Version:             2.2.0
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -28,7 +28,6 @@ Library
                        Happstack.Authenticate.Route
                        Happstack.Authenticate.Password.Controllers
                        Happstack.Authenticate.Password.Core
-                       Happstack.Authenticate.Password.Forms
                        Happstack.Authenticate.Password.Partials
                        Happstack.Authenticate.Password.PartialsURL
                        Happstack.Authenticate.Password.Route
