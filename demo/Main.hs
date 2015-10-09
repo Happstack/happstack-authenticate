@@ -22,14 +22,15 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Time (getCurrentTime)
 import Data.Unique
 import Data.Monoid ((<>))
 import GHC.Generics
-import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken, tokenUser)
+import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateConfig(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken, tokenUser, usernamePolicy)
 import Happstack.Authenticate.Route (initAuthentication)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
 import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
-import Happstack.Authenticate.Password.Core(PasswordState)
+import Happstack.Authenticate.Password.Core(PasswordConfig(..), PasswordState)
 import Happstack.Authenticate.Password.Route (initPassword)
 import Happstack.Authenticate.Password.URL(PasswordURL(..))
 import Happstack.Authenticate.OpenId.Core  (OpenIdState)
@@ -108,7 +109,8 @@ api authenticateState =
        Nothing -> unauthorized $ toResponse ("You are not authorized." :: Text)
        (Just auth') ->
          do let auth = B.drop 7 auth'
-            mToken <- decodeAndVerifyToken authenticateState (T.decodeUtf8 auth)
+            now <- liftIO getCurrentTime
+            mToken <- decodeAndVerifyToken authenticateState now (T.decodeUtf8 auth)
             case mToken of
               Nothing -> unauthorized $ toResponse ("You are not authorized." :: Text)
               (Just (_, jwt)) ->
@@ -194,12 +196,16 @@ index = do
         <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Happstack Authenticate Demo w/Angular + Bootstrap</title>
-        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css" />
+--        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css" />
 --        <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular.min.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
-        <script src="/bootstrap/js/bootstrap.min.js"></script>
-        <script src="/js/angular.min.js"></script>
-        <script src="/js/angular-route.min.js"></script>
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" />
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+--        <script src="/bootstrap/js/bootstrap.min.js"></script>
+--        <script src="/js/angular.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.0-beta.0/angular.min.js"></script>
+--        <script src="/js/angular-route.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.0-beta.0/angular-route.min.js"></script>
         <script src=(routeFn DemoAppJs [])></script>
         <script src=(routeFn (Authenticate Controllers) [])></script>
       </head>
@@ -210,7 +216,7 @@ index = do
          </div>
        </nav>
 
-       <div ng-click="alert('foo');">click me</div>
+--       <div ng-click="alert('foo');">click me</div>
 
        <div class="container-fluid">
          <div class="row">
@@ -226,6 +232,8 @@ index = do
                <div ng-controller="UsernamePasswordCtrl">
                 <div up-authenticated=False>
                   <p>This is a demonstration of the <code>happstack-authentication</code> library. You are currently not logged in.</p>
+
+                  <up-login />
 
                   <p>If you don't have an account already you can signup:</p>
                   <up-signup-password />
@@ -254,10 +262,12 @@ index = do
                     <div>{{message}}</div>
                   </div>
 
+                  <h2>OpenId Realm</h2>
+
                   <div ng-controller="OpenIdCtrl">
                     <p>If you are an admin you can edit the realm:</p>
                     <openid-realm />
-                    <p>{{claims.authAdmin}}</p>
+                    <p>Your are an auth admin: {{claims.authAdmin}}</p>
                   </div>
                 </div>
                </div>
@@ -273,10 +283,24 @@ index = do
 main :: IO ()
 main =
   do (cleanup, routeAuthenticate, authenticateState) <-
-       initAuthentication Nothing (const $ return True)
-         [ initPassword "http://localhost:8000/#resetPassword" "example.org"
-         , initOpenId
-         ]
+         let authenticateConfig = AuthenticateConfig
+               { _isAuthAdmin        = const $ return True
+               , _usernameAcceptable = usernamePolicy
+               , _requireEmail       = True
+               }
+             passwordPolicy = PasswordConfig
+               { _resetLink = "http://localhost:8000/#resetPassword"
+               , _domain    =  "example.org"
+               , _passwordAcceptable = \t ->
+                   if T.length t >= 5
+                   then Nothing
+                   else Just "Must be at least 5 characters."
+               }
+         in
+           initAuthentication Nothing authenticateConfig
+             [ initPassword passwordPolicy
+             , initOpenId
+             ]
      as <- query authenticateState GetAuthenticateState
      print as
      (simpleHTTP nullConf $

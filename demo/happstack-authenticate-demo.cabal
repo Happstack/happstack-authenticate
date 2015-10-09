@@ -18,7 +18,7 @@ executable happstack-authenticate-demo
                        bytestring >=0.10 && <0.11,
                        containers >=0.5 && <0.6,
                        data-default,
-                       happstack-authenticate >= 2.0 && < 2.2,
+                       happstack-authenticate >= 2.3 && < 2.4,
                        happstack-hsp,
                        happstack-jmacro,
                        happstack-server,

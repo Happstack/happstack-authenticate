@@ -25,7 +25,7 @@ import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Map          as Map
 import Data.UserId                 (UserId)
 import GHC.Generics                (Generic)
-import Happstack.Authenticate.Core (AuthenticateState, CoreError(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N(..), addTokenCookie, getToken, jsonOptions, toJSONError, toJSONSuccess, toJSONResponse, tokenIsAuthAdmin, userId)
+import Happstack.Authenticate.Core (AuthenticateConfig(..), AuthenticateState, CoreError(..), CreateAnonymousUser(..), GetUserByUserId(..), HappstackAuthenticateI18N(..), addTokenCookie, getToken, jsonOptions, toJSONError, toJSONSuccess, toJSONResponse, tokenIsAuthAdmin, userId)
 import Happstack.Authenticate.OpenId.URL
 import Happstack.Server            (RqBody(..), Happstack, Method(..), Response, askRq, unauthorized, badRequest, internalServerError, forbidden, lookPairsBS, method, resp, takeRequestBody, toResponse, toResponseBS, ok)
 import Language.Javascript.JMacro
@@ -172,10 +172,10 @@ getIdentifier =
 
 token :: (Alternative m, Happstack m) =>
          AcidState AuthenticateState
-      -> (UserId -> IO Bool)
+      -> AuthenticateConfig
       -> AcidState OpenIdState
       -> m Response
-token authenticateState isAuthAdmin openIdState =
+token authenticateState authenticateConfig openIdState =
     do identifier <- getIdentifier
        mUserId <- query' openIdState (IdentifierToUserId identifier)
        mUser <- case mUserId of
@@ -192,7 +192,7 @@ token authenticateState isAuthAdmin openIdState =
                   return (Just u)
        case mUser of
          Nothing     -> internalServerError $ toJSONError $ CoreError InvalidUserId
-         (Just user) -> do token <- addTokenCookie authenticateState isAuthAdmin user
+         (Just user) -> do token <- addTokenCookie authenticateState authenticateConfig user
                            let tokenBS = TL.encodeUtf8 $ TL.fromStrict token
 --                           ok $ toResponse token
                            ok $ toResponseBS "text/html" $ "<html><head><script type='text/javascript'>window.opener.tokenCB('" <> tokenBS <> "'); window.close();</script></head><body></body></html>"

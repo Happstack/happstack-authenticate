@@ -52,6 +52,31 @@ authenticateCtrlJs showURL = [jmacro|
 
     }]);
 
+    happstackAuthentication.factory('authInterceptor', ['$rootScope', '$q', '$window', 'userService', function ($rootScope, $q, $window, userService) {
+      return {
+        'request': function (config) {
+          config.headers = config.headers || {};
+          u = userService.getUser();
+          if (u && u.token) {
+            config.headers.Authorization = 'Bearer ' + u.token;
+          }
+          return config;
+        },
+        'responseError': function (rejection) {
+          if (rejection.status === 401) {
+            // handle the case where the user is not authenticated
+            userService.clearUser();
+            document.cookie = 'atc=; path=/; expires=Thu, 01-Jan-70 00:00:01 GMT;';
+          }
+          return $q.reject(rejection);
+        }
+      };
+    }]);
+
+    happstackAuthentication.config(['$httpProvider', function ($httpProvider) {
+      $httpProvider.interceptors.push('authInterceptor');
+    }]);
+
     // add userService
     happstackAuthentication.factory('userService', ['$rootScope', function ($rootScope) {
 
@@ -87,6 +112,18 @@ authenticateCtrlJs showURL = [jmacro|
         },
 
         getUser: function() {
+          function getCookie(cname) {
+            var name = cname + "=";
+            var ca = document.cookie.split(';');
+            for(var i=0; i<ca.length; i++) {
+              var c = ca[i];
+              while (c.charAt(0)==' ') c = c.substring(1);
+              if (c.indexOf(name) == 0) return c.substring(name.length,c.length);
+            }
+            return "";
+          };
+          if (getCookie('atc').length == 0 && this.userCache.isAuthenticated == true)
+            this.clearUser();
           return(this.userCache);
         },
 

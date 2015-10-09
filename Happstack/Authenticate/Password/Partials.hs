@@ -71,7 +71,7 @@ routePartial authenticateState url =
     ChangePassword ->
       do mUser <- getToken authenticateState
          case mUser of
-           Nothing     -> [hsx| <p><% show NotAuthenticated %></p> |]
+           Nothing     -> unauthorized =<< [hsx| <p><% show NotAuthenticated %></p> |] -- FIXME: I18N
            (Just (token, _)) -> changePasswordForm (token ^. tokenUser ^. userId)
     RequestResetPasswordForm -> requestResetPasswordForm
     ResetPasswordForm -> resetPasswordForm
@@ -81,26 +81,26 @@ signupPasswordForm :: (Functor m, Monad m) =>
 signupPasswordForm =
      [hsx|
        <form ng-submit="signupPassword()" role="form">
+        <div>{{signup_error}}</div>
         <div class="form-group">
          <label class="sr-only" for="su-username"><% UsernameMsg %></label>
-         <input class="form-control" ng-model="signup.naUser.username" type="text" id="username" name="su-username" placeholder=UsernameMsg />
+         <input class="form-control" ng-model="signup.naUser.username" type="text" id="username" name="su-username" value="" placeholder=UsernameMsg />
         </div>
         <div class="form-group">
          <label class="sr-only" for="su-email"><% EmailMsg %></label>
-         <input class="form-control" ng-model="signup.naUser.email" type="email" id="su-email" name="email" placeholder=EmailMsg />
+         <input class="form-control" ng-model="signup.naUser.email" type="email" id="su-email" name="email" value="" placeholder=EmailMsg />
         </div>
         <div class="form-group">
          <label class="sr-only" for="su-password"><% PasswordMsg %></label>
-         <input class="form-control" ng-model="signup.naPassword" type="password" id="su-password" name="su-pass" placeholder=PasswordMsg />
+         <input class="form-control" ng-model="signup.naPassword" type="password" id="su-password" name="su-pass" value="" placeholder=PasswordMsg />
         </div>
         <div class="form-group">
          <label class="sr-only" for="su-password-confirm"><% PasswordConfirmationMsg %></label>
-         <input class="form-control" ng-model="signup.naPasswordConfirm" type="password" id="su-password-confirm" name="su-pass-confirm" placeholder=PasswordConfirmationMsg />
+         <input class="form-control" ng-model="signup.naPasswordConfirm" type="password" id="su-password-confirm" name="su-pass-confirm" value="" placeholder=PasswordConfirmationMsg />
         </div>
         <div class="form-group">
          <input class="form-control" type="submit" value=SignUpMsg />
         </div>
-        <div>{{signup_error}}</div>
        </form>
   |]
 
@@ -111,6 +111,7 @@ usernamePasswordForm inline = [hsx|
     <span>
      <span ng-show="!isAuthenticated">
       <form ng-submit="login()" role="form"  (if inline then ["class" := "navbar-form navbar-left"] :: [Attr Text Text] else [])>
+       <div class="form-group">{{username_password_error}}</div>
        <div class="form-group">
         <label class="sr-only" for="username"><% UsernameMsg %> </label>
         <input class="form-control" ng-model="user.user" type="text" id="username" name="user" placeholder=UsernameMsg />
@@ -123,7 +124,6 @@ usernamePasswordForm inline = [hsx|
        <input class="form-control" type="submit" value=SignInMsg />
        </div>
       </form>
-      <div>{{username_password_error}}</div>
      </span>
     </span>
   |]
@@ -132,7 +132,7 @@ logoutForm ::  (Functor m, MonadIO m) => Partial m XML
 logoutForm = [hsx|
      <span ng-show="isAuthenticated">
       <div class="form-group">
-       <a class="navbar-right" ng-click="logout()" href=""><% LogoutMsg %></a>
+       <a ng-click="logout()" href="#"><% LogoutMsg %></a>
       </div>
      </span>
  |]
@@ -145,6 +145,7 @@ changePasswordForm userId =
      let changePasswordFn = "changePassword('" <> url <> "')"
      [hsx|
        <form ng-submit=changePasswordFn role="form">
+        <div class="form-group">{{change_password_error}}</div>
         <div class="form-group">
          <label class="sr-only" for="password"><% OldPasswordMsg %></label>
          <input class="form-control" ng-model="password.cpOldPassword" type="password" id="old-password" name="old-pass" placeholder=OldPasswordMsg />
@@ -160,7 +161,6 @@ changePasswordForm userId =
         <div class="form-group">
          <input class="form-control" type="submit" value=ChangePasswordMsg />
         </div>
-        <div>{{change_password_error}}</div>
        </form>
 
      |]
@@ -173,6 +173,7 @@ requestResetPasswordForm =
      [hsx|
       <div>
        <form ng-submit="requestResetPassword()" role="form">
+        <div class="form-group">{{request_reset_password_msg}}</div>
         <div class="form-group">
          <label class="sr-only" for="reset-username"><% UsernameMsg %></label>
          <input class="form-control" ng-model="requestReset.rrpUsername" type="text" id="reset-username" name="username" placeholder=UsernameMsg />
@@ -181,7 +182,6 @@ requestResetPasswordForm =
          <input class="form-control" type="submit" value=RequestPasswordResetMsg />
         </div>
        </form>
-       <div>{{request_reset_password_msg}}</div>
       </div>
      |]
 
@@ -191,6 +191,7 @@ resetPasswordForm =
   [hsx|
       <div>
        <form ng-submit="resetPassword()" role="form">
+        <div class="form-group">{{reset_password_msg}}</div>
         <div class="form-group">
          <label class="sr-only" for="reset-password"><% PasswordMsg %></label>
          <input class="form-control" ng-model="reset.rpPassword" type="password" id="reset-password" name="reset-password" placeholder=PasswordMsg />
@@ -203,6 +204,5 @@ resetPasswordForm =
          <input class="form-control" type="submit" value=ChangePasswordMsg />
         </div>
        </form>
-       <div>{{reset_password_msg}}</div>
       </div>
   |]

@@ -30,7 +30,7 @@ import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateURL, CoreError(..), CreateUser(..), Email(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, issueToken, jsonOptions, userId, username, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -38,11 +38,24 @@ import Language.Javascript.JMacro
 import Network.HTTP.Types              (toQuery, renderQuery)
 import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail, sendmail)
 import System.FilePath                 (combine)
+import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secret, secondsSinceEpoch, verify)
 import Web.Routes
 import Web.Routes.TH
+
+------------------------------------------------------------------------------
+-- PasswordConfig
+------------------------------------------------------------------------------
+
+data PasswordConfig = PasswordConfig
+    { _resetLink :: Text
+    , _domain :: Text
+    , _passwordAcceptable :: Text -> Maybe Text
+    }
+    deriving (Typeable, Generic)
+makeLenses ''PasswordConfig
 
 ------------------------------------------------------------------------------
 -- PasswordError
@@ -58,6 +71,7 @@ data PasswordError
   | MissingResetToken
   | InvalidResetToken
   | PasswordMismatch
+  | UnacceptablePassword { passwordErrorMessageMsg :: Text }
   | CoreError { passwordErrorMessageE :: CoreError }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   PasswordError where toJSON    = genericToJSON    jsonOptions
@@ -179,10 +193,10 @@ instance ToJExpr UserPass where
 
 token :: (Happstack m) =>
          AcidState AuthenticateState
-      -> (UserId -> IO Bool)
+      -> AuthenticateConfig
       -> AcidState PasswordState
       -> m Response
-token authenticateState isAuthAdmin passwordState =
+token authenticateState authenticateConfig passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
@@ -195,8 +209,8 @@ token authenticateState isAuthAdmin passwordState =
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
                      then unauthorized $ toJSONError InvalidUsernamePassword
-                     else do token <- addTokenCookie authenticateState isAuthAdmin u
-                             resp 201 $ toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
+                     else do token <- addTokenCookie authenticateState authenticateConfig u
+                             resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)]) -- toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
 
 ------------------------------------------------------------------------------
 -- account
@@ -228,25 +242,47 @@ instance FromJSON ChangePasswordData where parseJSON = genericParseJSON jsonOpti
 account :: (Happstack m) =>
            AcidState AuthenticateState
         -> AcidState PasswordState
+        -> AuthenticateConfig
+        -> PasswordConfig
         -> Maybe (UserId, AccountURL)
         -> m (Either PasswordError UserId)
 -- handle new account creation via POST to /account
 -- FIXME: check that password and password confirmation match
-account authenticateState passwordState Nothing =
+account authenticateState passwordState authenticateConfig passwordConfig Nothing =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
        Nothing               -> badRequest (Left $ CoreError JSONDecodeFailed)
        (Just newAccount) ->
-         do eUser <- update' authenticateState (CreateUser $ _naUser newAccount)
-            case eUser of
-              (Left e) -> return $ Left (CoreError e)
-              (Right user) -> do
-                hashed <- mkHashedPass (_naPassword newAccount)
-                update' passwordState (SetPassword (user ^. userId) hashed)
-                ok $ (Right (user ^. userId))
+           case (authenticateConfig ^. usernameAcceptable) (newAccount ^. naUser ^. username) of
+             (Just e) -> return $ Left (CoreError e)
+             Nothing ->
+                 case validEmail (authenticateConfig ^. requireEmail) (newAccount ^. naUser ^. email) of
+                   (Just e) -> return $ Left e
+                   Nothing ->
+                         if (newAccount ^. naPassword /= newAccount ^. naPasswordConfirm)
+                         then ok $ Left PasswordMismatch
+                         else case (passwordConfig ^. passwordAcceptable) (newAccount ^. naPassword) of
+                                (Just passwdError) -> ok $ Left (UnacceptablePassword passwdError)
+                                Nothing -> do
+                                  eUser <- update' authenticateState (CreateUser $ _naUser newAccount)
+                                  case eUser of
+                                    (Left e) -> return $ Left (CoreError e)
+                                    (Right user) -> do
+                                       hashed <- mkHashedPass (_naPassword newAccount)
+                                       update' passwordState (SetPassword (user ^. userId) hashed)
+                                       ok $ (Right (user ^. userId))
+    where
+      validEmail :: Bool -> Maybe Email -> Maybe PasswordError
+      validEmail required mEmail =
+          case (required, mEmail) of
+            (True, Nothing) -> Just $ CoreError InvalidEmail
+            (False, Just (Email "")) -> Nothing
+            (False, Nothing) -> Nothing
+            (_, Just email) -> if Email.isValid (Text.encodeUtf8 (email ^. unEmail)) then Nothing else Just $ CoreError InvalidEmail
+
 -- handle updates to /account/<userId>/*
-account authenticateState passwordState (Just (uid, url)) =
+account authenticateState passwordState authenticateConfig passwordConfig (Just (uid, url)) =
   case url of
     Password ->
       do method POST
@@ -268,9 +304,14 @@ account authenticateState passwordState (Just (uid, url)) =
                               do b <- verifyPassword authenticateState passwordState (token ^. tokenUser ^. username) (changePassword ^. cpOldPassword)
                                  if not b
                                    then forbidden (Left InvalidPassword)
-                                   else do pw <- mkHashedPass (changePassword ^. cpNewPassword)
-                                           update' passwordState (SetPassword uid pw)
-                                           ok $ (Right uid)
+                                   else if (changePassword ^. cpNewPassword /= changePassword ^. cpNewPasswordConfirm)
+                                        then ok $ (Left PasswordMismatch)
+                                        else case (passwordConfig ^. passwordAcceptable) (changePassword ^. cpNewPassword) of
+                                               (Just e) -> ok (Left $ UnacceptablePassword e)
+                                               Nothing -> do
+                                                   pw <- mkHashedPass (changePassword ^. cpNewPassword)
+                                                   update' passwordState (SetPassword uid pw)
+                                                   ok $ (Right uid)
 
 ------------------------------------------------------------------------------
 -- passwordReset
@@ -287,12 +328,11 @@ instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON js
 
 -- | request reset password
 passwordRequestReset :: (Happstack m) =>
-                        Text
-                     -> Text
+                        PasswordConfig
                      -> AcidState AuthenticateState
                      -> AcidState PasswordState
                      -> m (Either PasswordError Text)
-passwordRequestReset resetLink domain authenticateState passwordState =
+passwordRequestReset passwordConfig authenticateState passwordState =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
@@ -309,9 +349,9 @@ passwordRequestReset resetLink domain authenticateState passwordState =
                        case eResetToken of
                          (Left err) -> return (Left err)
                          (Right resetToken) ->
-                           do let resetLink' = resetLink <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
---                              liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
-                              sendResetEmail toEm (Email ("no-rneplay@" <> domain)) resetLink'
+                           do let resetLink' = (passwordConfig ^. resetLink) <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
+                              liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
+                              sendResetEmail toEm (Email ("no-reply@" <> (passwordConfig ^. domain))) resetLink'
                               return (Right "password reset request email sent.") -- FIXME: I18N
 
 -- | issueResetToken
@@ -357,8 +397,9 @@ instance FromJSON ResetPasswordData where parseJSON = genericParseJSON jsonOptio
 passwordReset :: (Happstack m) =>
                  AcidState AuthenticateState
               -> AcidState PasswordState
-              -> m (Either PasswordError ())
-passwordReset authenticateState passwordState =
+              -> PasswordConfig
+              -> m (Either PasswordError Text)
+passwordReset authenticateState passwordState passwordConfig =
   do method POST
      (Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
@@ -370,10 +411,11 @@ passwordReset authenticateState passwordState =
               (Just (user, _)) ->
                 if password /= passwordConfirm
                 then return (Left PasswordMismatch)
-                else do pw <-  mkHashedPass password
-                        update' passwordState (SetPassword (user ^. userId) pw)
-                        ok $ Right ()
-
+                else case (passwordConfig ^. passwordAcceptable) password of
+                       (Just e) -> ok $ Left $ UnacceptablePassword e
+                       Nothing -> do pw <-  mkHashedPass password
+                                     update' passwordState (SetPassword (user ^. userId) pw)
+                                     ok $ Right "Password Reset." -- I18N
          {-
          do mTokenTxt <- optional $ queryString $ lookText' "reset_btoken"
             case mTokenTxt of

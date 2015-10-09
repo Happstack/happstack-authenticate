@@ -9,7 +9,7 @@ import Data.Acid.Advanced    (query')
 import Data.Acid.Local       (createCheckpointAndClose, openLocalStateFrom)
 import Data.Text             (Text)
 import Data.UserId           (UserId)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateState, AuthenticateURL, CoreError(..), toJSONError, toJSONResponse)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateConfig, AuthenticateState, AuthenticateURL, CoreError(..), toJSONError, toJSONResponse)
 import Happstack.Authenticate.OpenId.Core (GetOpenIdRealm(..), OpenIdError(..), OpenIdState, initialOpenIdState, realm, token)
 import Happstack.Authenticate.OpenId.Controllers (openIdCtrl)
 import Happstack.Authenticate.OpenId.URL (OpenIdURL(..), openIdAuthenticationMethod, nestOpenIdURL)
@@ -31,11 +31,11 @@ import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, nestURL, pars
 
 routeOpenId :: (Happstack m) =>
                AcidState AuthenticateState
-            -> (UserId -> IO Bool)
+            -> AuthenticateConfig
             -> AcidState OpenIdState
             -> [Text]
             -> RouteT AuthenticateURL (ReaderT [Lang] m) Response
-routeOpenId authenticateState isAuthAdmin openIdState pathSegments =
+routeOpenId authenticateState authenticateConfig openIdState pathSegments =
   case parseSegments fromPathSegments pathSegments of
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
@@ -48,7 +48,7 @@ routeOpenId authenticateState isAuthAdmin openIdState pathSegments =
              realm <- query' openIdState GetOpenIdRealm
              forwardURL <- liftIO $ withManager $ getForwardUrl providerURL returnURL realm [] -- [("Email", "http://schema.openid.net/contact/email")]
              seeOther forwardURL (toResponse ())
-        ReturnTo -> token authenticateState isAuthAdmin openIdState
+        ReturnTo -> token authenticateState authenticateConfig openIdState
         Realm    -> realm authenticateState openIdState
 
 ------------------------------------------------------------------------------
@@ -57,9 +57,9 @@ routeOpenId authenticateState isAuthAdmin openIdState pathSegments =
 
 initOpenId :: FilePath
            -> AcidState AuthenticateState
-           -> (UserId -> IO Bool)
+           -> AuthenticateConfig
            -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initOpenId basePath authenticateState isAuthAdmin =
+initOpenId basePath authenticateState authenticateConfig =
   do openIdState <- openLocalStateFrom (combine basePath "openId") initialOpenIdState
      let shutdown = \normal ->
            if normal
@@ -69,6 +69,6 @@ initOpenId basePath authenticateState isAuthAdmin =
            do langsOveride <- queryString $ lookTexts' "_LANG"
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
-               routeOpenId authenticateState isAuthAdmin openIdState pathSegments
+               routeOpenId authenticateState authenticateConfig openIdState pathSegments
      return (shutdown, (openIdAuthenticationMethod, authenticationHandler), openIdCtrl authenticateState openIdState)
 

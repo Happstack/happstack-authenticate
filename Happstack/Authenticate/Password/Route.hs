@@ -6,8 +6,8 @@ import Data.Acid             (AcidState, closeAcidState, makeAcidic)
 import Data.Acid.Local       (createCheckpointAndClose, openLocalStateFrom)
 import Data.Text             (Text)
 import Data.UserId           (UserId)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateState, AuthenticateURL, CoreError(..), toJSONError, toJSONResponse)
-import Happstack.Authenticate.Password.Core (PasswordError(..), PasswordState, account, initialPasswordState, passwordReset, passwordRequestReset, token)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateConfig(..), AuthenticateState, AuthenticateURL, CoreError(..), toJSONError, toJSONResponse)
+import Happstack.Authenticate.Password.Core (PasswordConfig(..), PasswordError(..), PasswordState, account, initialPasswordState, passwordReset, passwordRequestReset, token)
 import Happstack.Authenticate.Password.Controllers (usernamePasswordCtrl)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
 import Happstack.Authenticate.Password.Partials (routePartial)
@@ -25,37 +25,35 @@ import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, parseSegments
 ------------------------------------------------------------------------------
 
 routePassword :: (Happstack m) =>
-                 Text
-              -> Text
+                 PasswordConfig
               -> AcidState AuthenticateState
-              -> (UserId -> IO Bool)
+              -> AuthenticateConfig
               -> AcidState PasswordState
               -> [Text]
               -> RouteT AuthenticateURL (ReaderT [Lang] m) Response
-routePassword resetLink domain authenticateState isAuthAdmin passwordState pathSegments =
+routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments =
   case parseSegments fromPathSegments pathSegments of
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
       case url of
-        Token        -> token authenticateState isAuthAdmin passwordState
-        Account mUrl -> toJSONResponse <$> account authenticateState passwordState mUrl
+        Token        -> token authenticateState authenticateConfig passwordState
+        Account mUrl -> toJSONResponse <$> account authenticateState passwordState authenticateConfig passwordConfig mUrl
         (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
-                           ok $ toResponse (html4StrictFrag, xml)
-        PasswordRequestReset -> toJSONResponse <$> passwordRequestReset resetLink domain authenticateState passwordState
-        PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState
+                           return $ toResponse (html4StrictFrag, xml)
+        PasswordRequestReset -> toJSONResponse <$> passwordRequestReset passwordConfig authenticateState passwordState
+        PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
         UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl
 
 ------------------------------------------------------------------------------
 -- initPassword
 ------------------------------------------------------------------------------
 
-initPassword :: Text
-             -> Text
+initPassword :: PasswordConfig
              -> FilePath
              -> AcidState AuthenticateState
-             -> (UserId -> IO Bool)
+             -> AuthenticateConfig
              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initPassword resetLink domain basePath authenticateState isAuthAdmin =
+initPassword passwordConfig basePath authenticateState authenticateConfig =
   do passwordState <- openLocalStateFrom (combine basePath "password") initialPasswordState
      let shutdown = \normal ->
            if normal
@@ -65,5 +63,5 @@ initPassword resetLink domain basePath authenticateState isAuthAdmin =
            do langsOveride <- queryString $ lookTexts' "_LANG"
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
-               routePassword resetLink domain authenticateState isAuthAdmin passwordState pathSegments
+               routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments
      return (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl)

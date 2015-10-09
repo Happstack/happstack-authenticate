@@ -21,86 +21,160 @@ usernamePasswordCtrlJs showURL = [jmacro|
     var usernamePassword = angular.module('usernamePassword', ['happstackAuthentication']);
 
     usernamePassword.controller('UsernamePasswordCtrl', ['$scope','$http','$window', '$location', 'userService', function ($scope, $http, $window, $location, userService) {
-/*      $scope.isAuthenticated = userService.getUser().isAuthenticated;
 
-      $scope.$watch(function () { return userService.getUser().isAuthenticated; }, function(newVal, oldVal) { $scope.isAuthenticated = newVal; });
-*/
+      // login()
+      emptyUser = function() {
+        return { user: '',
+                 password: ''
+               };
+      };
+
+      $scope.user = emptyUser();
       $scope.login = function () {
+        function callback(datum, status, headers, config) {
+          if (datum == null) {
+            $scope.username_password_error = 'error communicating with the server.';
+          } else {
+            if (datum.jrStatus == "Ok") {
+              $scope.username_password_error = '';
+              userService.updateFromToken(datum.jrData.token);
+            } else {
+              userService.clearUser();
+              $scope.username_password_error = datum.jrData;
+            }
+          }
+        };
         $http.
           post(`(showURL Token [])`, $scope.user).
-          success(function (datum, status, headers, config) {
-            $scope.username_password_error = '';
-//            $scope.isAuthenticated = true;
-            userService.updateFromToken(datum.token);
-          }).
-          error(function (datum, status, headers, config) {
-            // Erase the token if the user fails to log in
-            userService.clearUser();
-//            $scope.isAuthenticated = false;
-
-            // Handle login errors here
-            $scope.username_password_error = datum.error;
-          });
+          success(callback).
+          error(callback);
       };
+
+      // signupPassword()
+      emptySignup = function () {
+        return { naUser: { username: '',
+                           email: ''
+                         },
+                 naPassword: '',
+                 naPasswordConfirm: ''
+               };
+      };
+      $scope.signup = emptySignup();
 
       $scope.signupPassword = function () {
         $scope.signup.naUser.userId = 0;
+
+        function callback(datum, status, headers, config) {
+          if (datum == null) {
+            $scope.username_password_error = 'error communicating with server.';
+          } else {
+            if (datum.jrStatus == "Ok") {
+              $scope.signup_error = 'Account Created'; // FIXME -- I18N
+              $scope.signup = emptySignup();
+            } else {
+              $scope.signup_error = datum.jrData;
+            }
+          }
+        };
+
         $http.
           post(`(showURL (Account Nothing) [])`, $scope.signup).
-          success(function (datum, status, headers, config) {
-            $scope.signup_error = 'Account Created'; // FIXME -- I18N
-            $scope.signup = {};
-          }).
-          error(function (datum, status, headers, config) {
-            $scope.signup_error = datum.error;
-          });
+          success(callback).
+          error(callback);
       };
 
+      // changePassword()
+      emptyPassword = function () {
+        return { cpOldPassword: '',
+                 cpNewPassword: '',
+                 cpNewPasswordConfirm: ''
+               };
+      };
+
+      $scope.password = emptyPassword();
       $scope.changePassword = function (url) {
         var u = userService.getUser();
+
+        function callback(datum, status, headers, config) {
+          if (datum == null) {
+            $scope.username_password_error = 'error communicating with server.';
+          } else {
+            if (datum.jrStatus == "Ok") {
+              $scope.change_password_error = 'Password Changed.'; // FIXME -- I18N
+              $scope.password = emptyPassword();
+            } else {
+              $scope.change_password_error = datum.jrData;
+            }
+          }
+        };
+
         if (u.isAuthenticated) {
           $http.
             post(url, $scope.password).
-            success(function (datum, status, headers, config) {
-            $scope.change_password_error = 'Password Changed.'; // FIXME -- I18N
-            $scope.password = {};
-          }).
-          error(function (datum, status, headers, config) {
-            $scope.change_password_error = datum.error;
-          });
+            success(callback).
+            error(callback);
         } else {
-            $scope.change_password_error = 'Not Authenticated.'; // FIXME -- I18N
+          $scope.change_password_error = 'Not Authenticated.'; // FIXME -- I18N
         }
       };
 
+      // requestResetPassword()
+      requestResetEmpty = function () {
+        return { rrpUsername: '' };
+      };
+      $scope.requestReset = requestResetEmpty();
       $scope.requestResetPassword = function () {
+        function callback(datum, status, headers, config) {
+          if (datum == null) {
+            $scope.request_reset_password_msg = 'error communicating with the server.';
+          } else {
+            if (datum.jrStatus == "Ok") {
+              $scope.request_reset_password_msg = datum.jrData;
+              $scope.requestReset = requestResetEmpty();
+            } else {
+              $scope.request_reset_password_msg = datum.jrData;
+            }
+          }
+        }
+
         $http.post(`(showURL PasswordRequestReset [])`, $scope.requestReset).
-          success(function (datum, status, headers, config) {
-            $scope.request_reset_password_msg = datum;
-          }).
-          error(function (datum, status, headers, config) {
-            $scope.request_reset_password_msg = datum.error;
-          });
+          success(callback).
+          error(callback);
       };
 
+      // resetPassword()
+      resetEmpty = function () {
+        return { rpPassword: '',
+                 rpPasswordConfirm: ''
+               };
+      };
+      $scope.reset = resetEmpty();
       $scope.resetPassword = function () {
+          function callback(datum, status, headers, config) {
+              if (datum == null) {
+                  $scope.reset_password_msg = 'error communicating with the server.';
+              } else {
+                  if (datum.jrStatus == "Ok") {
+                    $scope.reset_password_msg = datum.jrData;
+                    $scope.reset = resetEmpty();
+                  } else {
+                      $scope.reset_password_msg = datum.jrData;
+                  }
+              }
+          }
+
         var resetToken = $location.search().reset_token;
         if (resetToken) {
           $scope.reset.rpResetToken = resetToken;
           $http.post(`(showURL PasswordReset [])`, $scope.reset).
-            success(function (datum, status, headers, config) {
-              $scope.reset_password_msg = datum;
-            }).
-            error(function (datum, status, headers, config) {
-              $scope.reset_password_msg = datum.error;
-            });
+            success(callback).
+            error(callback);
         } else {
           $scope.reset_password_msg = "reset token not found."; // FIXME -- I18N
         }
       };
-
     }]);
-
+    /*
     usernamePassword.factory('authInterceptor', ['$rootScope', '$q', '$window', 'userService', function ($rootScope, $q, $window, userService) {
       return {
         request: function (config) {
@@ -114,6 +188,8 @@ usernamePasswordCtrlJs showURL = [jmacro|
         responseError: function (rejection) {
           if (rejection.status === 401) {
             // handle the case where the user is not authenticated
+            userService.clearUser();
+            document.cookie = 'atc=; path=/; expires=Thu, 01-Jan-70 00:00:01 GMT;';
           }
           return $q.reject(rejection);
         }
@@ -123,7 +199,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
     usernamePassword.config(['$httpProvider', function ($httpProvider) {
       $httpProvider.interceptors.push('authInterceptor');
     }]);
-
+     */
     // upAuthenticated directive
     usernamePassword.directive('upAuthenticated', ['$rootScope', 'userService', function ($rootScope, userService) {
       return {

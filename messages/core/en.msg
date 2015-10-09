@@ -5,5 +5,8 @@ AuthorizationRequired: Authorization required.
 Forbidden: Forbidden.
 JSONDecodeFailed: Failed to decode JSON data.
 InvalidUserId: Invalid UserId
+UsernameNotAcceptable: Username not acceptable.
+InvalidEmail: Invalid email address.
+
 
 

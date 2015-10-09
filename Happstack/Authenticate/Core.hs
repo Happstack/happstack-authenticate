@@ -33,7 +33,11 @@ fetch the partials for the extra information.
 -}
 
 module Happstack.Authenticate.Core
-    ( HappstackAuthenticateI18N(..)
+    ( AuthenticateConfig(..)
+    , isAuthAdmin
+    , usernameAcceptable
+    , requireEmail
+    , HappstackAuthenticateI18N(..)
     , UserId(..)
     , unUserId
     , rUserId
@@ -45,6 +49,7 @@ module Happstack.Authenticate.Core
     , Username(..)
     , unUsername
     , rUsername
+    , usernamePolicy
     , Email(..)
     , unEmail
     , User(..)
@@ -140,27 +145,81 @@ import Data.Text                       (Text)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
 import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
+import Data.Time.Clock.POSIX           (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.UserId                     (UserId(..), rUserId, succUserId, unUserId)
 import GHC.Generics                    (Generic)
 import Happstack.Server                (Cookie(secure), CookieLife(Session, MaxAge), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
+-- import Happstack.Server.Internal.Clock (getApproximateUTCTime)
 import Language.Javascript.JMacro
-import Prelude                         hiding ((.), id)
+import Prelude                         hiding ((.), id, exp)
 import System.IO                       (IOMode(ReadMode), withFile)
 import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secret, verify)
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, secret, verify)
 import Web.Routes                      (RouteT, PathInfo(..), nestURL)
 import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
 
-data HappstackAuthenticateI18N = HappstackAuthenticateI18N
-
 -- | when creating JSON field names, drop the first character. Since
 -- we are using lens, the leading character should always be _.
 jsonOptions :: Options
 jsonOptions = defaultOptions { fieldLabelModifier = drop 1 }
+
+data HappstackAuthenticateI18N = HappstackAuthenticateI18N
+
+------------------------------------------------------------------------------
+-- CoreError
+------------------------------------------------------------------------------
+
+-- | the `CoreError` type is used to represent errors in a language
+-- agnostic manner. The errors are translated into human readable form
+-- via the I18N translations.
+data CoreError
+  = HandlerNotFound -- AuthenticationMethod
+  | URLDecodeFailed
+  | UsernameAlreadyExists
+  | AuthorizationRequired
+  | Forbidden
+  | JSONDecodeFailed
+  | InvalidUserId
+  | UsernameNotAcceptable
+  | InvalidEmail
+  | TextError Text
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
+instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
+
+instance ToJExpr CoreError where
+    toJExpr = toJExpr . toJSON
+
+deriveSafeCopy 0 'base ''CoreError
+
+mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
+
+data Status
+    = Ok
+    | NotOk
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+deriveSafeCopy 1 'base ''Status
+-- makeLenses ''Status
+makeBoomerangs ''Status
+
+instance ToJSON   Status where toJSON    = genericToJSON    jsonOptions
+instance FromJSON Status where parseJSON = genericParseJSON jsonOptions
+
+data JSONResponse = JSONResponse
+    { _jrStatus :: Status
+    , _jrData   :: A.Value
+    }
+    deriving (Eq, Read, Show, Data, Typeable, Generic)
+-- deriveSafeCopy 1 'base ''JSONResponse
+makeLenses ''JSONResponse
+makeBoomerangs ''JSONResponse
+
+instance ToJSON   JSONResponse where toJSON    = genericToJSON    jsonOptions
+instance FromJSON JSONResponse where parseJSON = genericParseJSON jsonOptions
 
 -- | convert a value to a JSON encoded 'Response'
 toJSONResponse :: (RenderMessage HappstackAuthenticateI18N e, ToJSON a) => Either e a -> Response
@@ -169,11 +228,14 @@ toJSONResponse (Right a) = toJSONSuccess a
 
 -- | convert a value to a JSON encoded 'Response'
 toJSONSuccess :: (ToJSON a) => a -> Response
-toJSONSuccess a = toResponseBS "application/json" (A.encode a)
+toJSONSuccess a = toResponseBS "application/json" (A.encode (JSONResponse Ok (A.toJSON a)))
 
 -- | convert an error to a JSON encoded 'Response'
+--
+-- FIXME: I18N
 toJSONError :: forall e. (RenderMessage HappstackAuthenticateI18N e) => e -> Response
-toJSONError e = toResponseBS "application/json" (A.encode (A.object ["error" A..= renderMessage HappstackAuthenticateI18N ["en"] e]))
+toJSONError e = toResponseBS "application/json" (A.encode (JSONResponse NotOk (A.toJSON (renderMessage HappstackAuthenticateI18N ["en"] e))))
+--                (A.encode (A.object ["error" A..= renderMessage HappstackAuthenticateI18N ["en"] e]))
 
 ------------------------------------------------------------------------------
 
@@ -261,6 +323,31 @@ instance Indexable UserIxs User where
              (ixFun $ maybeToList . view email)
 
 ------------------------------------------------------------------------------
+-- AuthenticateConfig
+------------------------------------------------------------------------------
+
+-- | Various configuration options that apply to all authentication methods
+data AuthenticateConfig = AuthenticateConfig
+    { _isAuthAdmin        :: UserId -> IO Bool           -- ^ can user administrate the authentication system?
+    , _usernameAcceptable :: Username -> Maybe CoreError -- ^ enforce username policies, valid email, etc. 'Nothing' == ok, 'Just Text' == error message
+    , _requireEmail       :: Bool
+    }
+    deriving (Typeable, Generic)
+makeLenses ''AuthenticateConfig
+
+-- | a very basic policy for 'userAcceptable'
+--
+-- Enforces:
+--
+--  'Username' can not be empty
+usernamePolicy :: Username
+               -> Maybe CoreError
+usernamePolicy username =
+    if Text.null $ username ^. unUsername
+    then Just UsernameNotAcceptable
+    else Nothing
+
+------------------------------------------------------------------------------
 -- SharedSecret
 ------------------------------------------------------------------------------
 
@@ -302,32 +389,6 @@ type SharedSecrets = Map UserId SharedSecret
 -- | An empty `SharedSecrets`
 initialSharedSecrets :: SharedSecrets
 initialSharedSecrets = Map.empty
-
-------------------------------------------------------------------------------
--- CoreError
-------------------------------------------------------------------------------
-
--- | the `CoreError` type is used to represent errors in a language
--- agnostic manner. The errors are translated into human readable form
--- via the I18N translations.
-data CoreError
-  = HandlerNotFound -- AuthenticationMethod
-  | URLDecodeFailed
-  | UsernameAlreadyExists
-  | AuthorizationRequired
-  | Forbidden
-  | JSONDecodeFailed
-  | InvalidUserId
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
-instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
-
-instance ToJExpr CoreError where
-    toJExpr = toJExpr . toJSON
-
-deriveSafeCopy 0 'base ''CoreError
-
-mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
 
 ------------------------------------------------------------------------------
 -- NewAccountMode
@@ -425,17 +486,16 @@ getNewAccountMode =
 createUser :: User
            -> Update AuthenticateState (Either CoreError User)
 createUser u =
-  do as@AuthenticateState{..} <- get
-     if IxSet.null $ (as ^. users) @= (u ^. username)
-       then do
-         let user' = set userId _nextUserId u
-             as' = as { _users      = IxSet.insert user' _users
-                      , _nextUserId = succ _nextUserId
-                      }
-         put as'
-         return (Right user')
-       else
-         return (Left UsernameAlreadyExists)
+    do as@AuthenticateState{..} <- get
+       if IxSet.null $ (as ^. users) @= (u ^. username)
+         then do let user' = set userId _nextUserId u
+                     as' = as { _users      = IxSet.insert user' _users
+                              , _nextUserId = succ _nextUserId
+                              }
+                 put as'
+                 return (Right user')
+         else
+             return (Left UsernameAlreadyExists)
 
 -- | Create a new 'User'. This will allocate a new 'UserId'. The
 -- returned 'User' value will have the updated 'UserId'.
@@ -451,7 +511,6 @@ createAnonymousUser =
                   }
      put as'
      return user
-
 
 -- | Update an existing 'User'. Must already have a valid 'UserId'.
 updateUser :: User
@@ -486,6 +545,8 @@ getUserByUserId userId =
        return $ getOne $ us @= userId
 
 -- | look up a 'User' by their 'Email'
+--
+-- NOTE: if the email is associated with more than one account this will return 'Nothing'
 getUserByEmail :: Email
                -> Query AuthenticateState (Maybe User)
 getUserByEmail email =
@@ -558,25 +619,29 @@ type TokenText = Text
 -- `OpenId` realm, change the registeration mode, etc.
 issueToken :: (MonadIO m) =>
               AcidState AuthenticateState
-           -> (UserId -> IO Bool)          -- ^ isAuthAdmin function
+           -> AuthenticateConfig
            -> User                         -- ^ the user
            -> m TokenText
-issueToken authenticateState isAuthAdmin user =
+issueToken authenticateState authenticateConfig user =
   do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
-     admin   <- liftIO $ isAuthAdmin (user ^. userId)
-     let claims = def { unregisteredClaims =
+     admin   <- liftIO $ (authenticateConfig ^. isAuthAdmin) (user ^. userId)
+     now <- liftIO getCurrentTime
+     let claims = def { exp = intDate $ utcTimeToPOSIXSeconds (addUTCTime (60*60*24*30) now)
+                      , unregisteredClaims =
                            Map.fromList [ ("user"     , toJSON user)
                                         , ("authAdmin", toJSON admin)
-                                        ] }
+                                        ]
+                      }
      return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 
 -- | decode and verify the `TokenText`. If successful, return the
 -- `Token` otherwise `Nothing`.
 decodeAndVerifyToken :: (MonadIO m) =>
                         AcidState AuthenticateState
+                     -> UTCTime
                      -> TokenText
                      -> m (Maybe (Token, JWT VerifiedJWT))
-decodeAndVerifyToken authenticateState token =
+decodeAndVerifyToken authenticateState now token =
   do -- decode unverified token
      let mUnverified = decode token
      case mUnverified of
@@ -598,13 +663,19 @@ decodeAndVerifyToken authenticateState token =
                         -- finally we can verify all the claims
                         case verify (secret (_unSharedSecret ssecret)) unverified of
                           Nothing -> return Nothing
-                          (Just verified) ->
-                            case Map.lookup "authAdmin" (unregisteredClaims (claims verified)) of
-                              Nothing -> return (Just (Token u False, verified))
-                              (Just a) ->
-                                case fromJSON a of
-                                  (Error _) -> return (Just (Token u False, verified))
-                                  (Success b) -> return (Just (Token u b, verified))
+                          (Just verified) -> -- check expiration
+                            case exp (claims verified) of
+                            -- exp field missing, expire now
+                              Nothing -> return Nothing
+                              (Just exp') ->
+                                if (utcTimeToPOSIXSeconds now) > (secondsSinceEpoch exp')
+                                then return Nothing
+                                else case Map.lookup "authAdmin" (unregisteredClaims (claims verified)) of
+                                       Nothing -> return (Just (Token u False, verified))
+                                       (Just a) ->
+                                           case fromJSON a of
+                                             (Error _) -> return (Just (Token u False, verified))
+                                             (Success b) -> return (Just (Token u b, verified))
 
 ------------------------------------------------------------------------------
 -- Token in a Cookie
@@ -619,13 +690,14 @@ authCookieName = "atc"
 -- see also: `issueToken`
 addTokenCookie :: (Happstack m) =>
                   AcidState AuthenticateState
-               -> (UserId -> IO Bool)
+               -> AuthenticateConfig
                -> User
                -> m TokenText
-addTokenCookie authenticateState isAuthAdmin user =
-  do token <- issueToken authenticateState isAuthAdmin user
+addTokenCookie authenticateState authenticateConfig user =
+  do token <- issueToken authenticateState authenticateConfig user
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
      addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
+--     addCookie (MaxAge 60) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
      return token
 
 -- | delete the `Token` `Cookie`
@@ -643,7 +715,9 @@ getTokenCookie authenticateState =
   do mToken <- optional $ lookCookieValue authCookieName
      case mToken of
        Nothing      -> return Nothing
-       (Just token) -> decodeAndVerifyToken authenticateState (Text.pack token)
+       (Just token) ->
+           do now <- liftIO getCurrentTime
+              decodeAndVerifyToken authenticateState now (Text.pack token)
 
 
 ------------------------------------------------------------------------------
@@ -660,7 +734,8 @@ getTokenHeader authenticateState =
        Nothing -> return Nothing
        (Just auth') ->
          do let auth = B.drop 7 auth'
-            decodeAndVerifyToken authenticateState (Text.decodeUtf8 auth)
+            now <- liftIO getCurrentTime
+            decodeAndVerifyToken authenticateState now (Text.decodeUtf8 auth)
 
 ------------------------------------------------------------------------------
 -- Token in a Header or Cookie
@@ -752,3 +827,4 @@ nestAuthenticationMethod :: (PathInfo methodURL) =>
                          -> RouteT AuthenticateURL m a
 nestAuthenticationMethod authenticationMethod =
   nestURL $ \methodURL -> AuthenticationMethods $ Just (authenticationMethod, toPathSegments methodURL)
+

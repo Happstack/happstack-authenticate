@@ -13,7 +13,7 @@ import Data.Unique (hashUnique, newUnique)
 import Data.UserId (UserId)
 import HSP.JMacro (IntegerSupply(..))
 import Happstack.Authenticate.Controller (authenticateCtrl)
-import Happstack.Authenticate.Core (AuthenticateState, AuthenticateURL(..), AuthenticationHandler, AuthenticationHandlers, AuthenticationMethod, CoreError(HandlerNotFound), initialAuthenticateState, toJSONError)
+import Happstack.Authenticate.Core (AuthenticateConfig, AuthenticateState, AuthenticateURL(..), AuthenticationHandler, AuthenticationHandlers, AuthenticationMethod, CoreError(HandlerNotFound), initialAuthenticateState, toJSONError)
 import Happstack.Server (notFound, ok, Response, ServerPartT, ToMessage(toResponse))
 import Happstack.Server.JMacro ()
 import Language.Javascript.JMacro (JStat)
@@ -46,14 +46,14 @@ route controllers authenticationHandlers url =
 
 initAuthentication
   :: Maybe FilePath
-  -> (UserId -> IO Bool)
-  -> [FilePath -> AcidState AuthenticateState -> (UserId -> IO Bool) -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
+  -> AuthenticateConfig
+  -> [FilePath -> AcidState AuthenticateState -> AuthenticateConfig -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
   -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState)
-initAuthentication mBasePath isAuthAdmin initMethods =
+initAuthentication mBasePath authenticateConfig initMethods =
   do let authenticatePath = combine (fromMaybe "state" mBasePath) "authenticate"
      authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
      -- FIXME: need to deal with one of the initMethods throwing an exception
-     (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState isAuthAdmin) initMethods
+     (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfig) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
          h       = route javascript (Map.fromList handlers)
      return (cleanup, h, authenticateState)
