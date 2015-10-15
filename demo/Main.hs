@@ -288,7 +288,7 @@ main =
                , _usernameAcceptable = usernamePolicy
                , _requireEmail       = True
                }
-             passwordPolicy = PasswordConfig
+             passwordConfig = PasswordConfig
                { _resetLink = "http://localhost:8000/#resetPassword"
                , _domain    =  "example.org"
                , _passwordAcceptable = \t ->
@@ -298,7 +298,7 @@ main =
                }
          in
            initAuthentication Nothing authenticateConfig
-             [ initPassword passwordPolicy
+             [ initPassword passwordConfig
              , initOpenId
              ]
      as <- query authenticateState GetAuthenticateState
