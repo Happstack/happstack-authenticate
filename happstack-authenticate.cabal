@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.3.1
+Version:             2.3.2
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -11,6 +11,7 @@ Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.6
+tested-with:         GHC == 7.6.3, GHC == 7.8.4, GHC == 7.10.3
 data-files:
   messages/core/en.msg
   messages/openid/error/en.msg
@@ -42,7 +43,7 @@ Library
 
   Build-depends:       base                         > 4     && < 5,
                        acid-state                   >= 0.6  && < 0.15,
-                       aeson                        >= 0.4  && < 0.10,
+                       aeson                        >= 0.4  && < 0.11,
                        authenticate                 == 1.3.*,
                        base64-bytestring            >= 1.0  && < 1.1,
                        boomerang                    >= 1.4  && < 1.5,
@@ -59,7 +60,7 @@ Library
                        happstack-server             >= 6.0  && < 7.5,
                        happstack-hsp                >= 7.3  && < 7.4,
                        http-conduit                 >= 1.4  && < 2.2,
-                       http-types                   >= 0.6  && < 0.9,
+                       http-types                   >= 0.6  && < 0.10,
                        hsp                          >= 0.10 && < 0.11,
                        hsx-jmacro                   >= 7.3  && < 7.4,
                        safecopy                     >= 0.8  && < 0.10,
