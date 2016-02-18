@@ -12,7 +12,7 @@ let
       , mime-mail, mtl, pwstore-purehaskell, random, safecopy
       , shakespeare, stdenv, text, time, unordered-containers, userid
       , web-routes, web-routes-boomerang, web-routes-happstack
-      , web-routes-hsp, web-routes-th
+      , web-routes-hsp, web-routes-th, cabal-install
       }:
       mkDerivation {
         pname = "happstack-authenticate";
@@ -27,6 +27,7 @@ let
           time unordered-containers userid web-routes web-routes-boomerang
           web-routes-happstack web-routes-hsp web-routes-th
         ];
+        buildTools = [cabal-install];
         homepage = "http://www.happstack.com/";
         description = "Happstack Authentication Library";
         license = stdenv.lib.licenses.bsd3;
