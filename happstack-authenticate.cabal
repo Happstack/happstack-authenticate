@@ -10,7 +10,7 @@ Maintainer:          jeremy@seereason.com
 Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
-Cabal-version:       >=1.6
+Cabal-version:       >=1.8
 tested-with:         GHC == 7.6.3, GHC == 7.8.4, GHC == 7.10.3
 data-files:
   messages/core/en.msg
