@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.3.4.1
+Version:             2.3.4.2
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -49,7 +49,7 @@ Library
                        boomerang                    >= 1.4  && < 1.5,
                        bytestring                   >= 0.9  && < 0.11,
                        containers                   >= 0.4  && < 0.6,
-                       data-default                 >= 0.5  && < 0.6,
+                       data-default                 >= 0.5  && < 0.7,
                        email-validate               >= 2.1  && < 2.3,
                        filepath                     >= 1.3  && < 1.5,
                        hsx2hs                       >= 0.13 && < 0.14,
@@ -66,10 +66,10 @@ Library
                        safecopy                     >= 0.8  && < 0.10,
                        mime-mail                    >= 0.4  && < 0.5,
                        mtl                          >= 2.0  && < 2.3,
-                       lens                         >= 4.2  && < 4.14,
+                       lens                         >= 4.2  && < 4.15,
                        pwstore-purehaskell          == 2.1.*,
                        text                         >= 0.11 && < 1.3,
-                       time                         >= 1.2  && < 1.6,
+                       time                         >= 1.2  && < 1.7,
                        userid                       >= 0.1  && < 0.2,
                        random                       >= 1.0  && < 1.2,
                        shakespeare                  >= 2.0  && < 2.1,
