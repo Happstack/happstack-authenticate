@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.3.4.6
+Version:             2.3.4.7
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -43,7 +43,7 @@ Library
 
   Build-depends:       base                         > 4     && < 5,
                        acid-state                   >= 0.6  && < 0.15,
-                       aeson                        (>= 0.4  && < 0.10) || (>= 0.11 && < 1.1),
+                       aeson                        (>= 0.4  && < 0.10) || (>= 0.11 && < 1.2),
                        authenticate                 == 1.3.*,
                        base64-bytestring            >= 1.0  && < 1.1,
                        boomerang                    >= 1.4  && < 1.5,
