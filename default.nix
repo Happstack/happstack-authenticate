@@ -10,7 +10,7 @@
 }:
 mkDerivation {
   pname = "happstack-authenticate";
-  version = "2.3.0";
+  version = "2.3.4.7";
   src = ./.;
   libraryHaskellDepends = [
     acid-state aeson authenticate base base64-bytestring boomerang
