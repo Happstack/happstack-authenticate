@@ -19,7 +19,7 @@ import Happstack.Server.JMacro ()
 import HSP                        (unXMLGenT)
 import HSP.HTML4                  (html4StrictFrag)
 import Language.Javascript.JMacro (JStat)
-import Network.HTTP.Conduit        (withManager)
+import Network.HTTP.Conduit        (newManager, tlsManagerSettings)
 import System.FilePath       (combine)
 import Text.Shakespeare.I18N (Lang)
 import Web.Authenticate.OpenId     (Identifier, OpenIdResponse(..), authenticateClaimed, getForwardUrl)
@@ -46,7 +46,8 @@ routeOpenId authenticateState authenticateConfig openIdState pathSegments =
         (BeginDance providerURL) ->
           do returnURL <- nestOpenIdURL $ showURL ReturnTo
              realm <- query' openIdState GetOpenIdRealm
-             forwardURL <- liftIO $ withManager $ getForwardUrl providerURL returnURL realm [] -- [("Email", "http://schema.openid.net/contact/email")]
+             forwardURL <- liftIO $ do manager <- newManager tlsManagerSettings
+                                       getForwardUrl providerURL returnURL realm [] manager -- [("Email", "http://schema.openid.net/contact/email")]
              seeOther forwardURL (toResponse ())
         ReturnTo -> token authenticateState authenticateConfig openIdState
         Realm    -> realm authenticateState openIdState

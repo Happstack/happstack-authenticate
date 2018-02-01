@@ -25,9 +25,9 @@ let
           hsx2hs http-conduit http-types ixset-typed jmacro jwt lens
           mime-mail mtl pwstore-purehaskell random safecopy shakespeare text
           time unordered-containers userid web-routes web-routes-boomerang
-          web-routes-happstack web-routes-hsp web-routes-th
+          web-routes-happstack web-routes-hsp web-routes-th cabal-install
         ];
-        buildTools = [cabal-install];
+        buildTools = [];
         homepage = "http://www.happstack.com/";
         description = "Happstack Authentication Library";
         license = stdenv.lib.licenses.bsd3;

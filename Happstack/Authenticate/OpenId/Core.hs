@@ -29,7 +29,7 @@ import Happstack.Authenticate.Core (AuthenticateConfig(..), AuthenticateState, C
 import Happstack.Authenticate.OpenId.URL
 import Happstack.Server            (RqBody(..), Happstack, Method(..), Response, askRq, unauthorized, badRequest, internalServerError, forbidden, lookPairsBS, method, resp, takeRequestBody, toResponse, toResponseBS, ok)
 import Language.Javascript.JMacro
-import Network.HTTP.Conduit        (withManager)
+import Network.HTTP.Conduit        (newManager, tlsManagerSettings)
 import Text.Shakespeare.I18N       (RenderMessage(..), Lang, mkMessageFor)
 import Web.Authenticate.OpenId     (Identifier)
 import Web.Authenticate.OpenId     (Identifier, OpenIdResponse(..), authenticateClaimed, getForwardUrl)
@@ -167,7 +167,8 @@ getIdentifier :: (Happstack m) => m Identifier
 getIdentifier =
     do pairs'      <- lookPairsBS
        let pairs = mapMaybe (\(k, ev) -> case ev of (Left _) -> Nothing ; (Right v) -> Just (T.pack k, TL.toStrict $ TL.decodeUtf8 v)) pairs'
-       oir <- liftIO $ withManager $ authenticateClaimed pairs
+       oir <- liftIO $ do manager <- newManager tlsManagerSettings
+                          authenticateClaimed pairs manager
        return (oirOpLocal oir)
 
 token :: (Alternative m, Happstack m) =>
