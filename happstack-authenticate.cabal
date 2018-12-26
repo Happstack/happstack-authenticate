@@ -54,7 +54,7 @@ Library
                        filepath                     >= 1.3  && < 1.5,
                        hsx2hs                       >= 0.13 && < 0.15,
                        jmacro                       >= 0.6.11  && < 0.7,
-                       jwt                          >= 0.3  && < 0.9,
+                       jwt                          >= 0.3  && < 0.8,
                        ixset-typed                  >= 0.3  && < 0.5,
                        happstack-jmacro             >= 7.0  && < 7.1,
                        happstack-server             >= 6.0  && < 7.6,
