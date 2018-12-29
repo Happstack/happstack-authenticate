@@ -198,7 +198,7 @@ token :: (Happstack m) =>
       -> m Response
 token authenticateState authenticateConfig passwordState =
   do method POST
-     (Just (Body body)) <- takeRequestBody =<< askRq
+     ~(Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
        Nothing   -> badRequest $ toJSONError (CoreError JSONDecodeFailed)
        (Just (UserPass username password)) ->
@@ -250,7 +250,7 @@ account :: (Happstack m) =>
 -- FIXME: check that password and password confirmation match
 account authenticateState passwordState authenticateConfig passwordConfig Nothing =
   do method POST
-     (Just (Body body)) <- takeRequestBody =<< askRq
+     ~(Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
        Nothing               -> badRequest (Left $ CoreError JSONDecodeFailed)
        (Just newAccount) ->
@@ -296,7 +296,7 @@ account authenticateState passwordState authenticateConfig passwordConfig (Just 
               else do mBody <- takeRequestBody =<< askRq
                       case mBody of
                         Nothing     -> badRequest (Left $ CoreError JSONDecodeFailed)
-                        (Just (Body body)) ->
+                        ~(Just (Body body)) ->
                           case Aeson.decode body of
                             Nothing -> do -- liftIO $ print body
                                           badRequest (Left $ CoreError JSONDecodeFailed)
@@ -334,7 +334,7 @@ passwordRequestReset :: (Happstack m) =>
                      -> m (Either PasswordError Text)
 passwordRequestReset passwordConfig authenticateState passwordState =
   do method POST
-     (Just (Body body)) <- takeRequestBody =<< askRq
+     ~(Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
        Nothing   -> badRequest $ Left $ CoreError JSONDecodeFailed
        (Just (RequestResetPasswordData username)) ->
@@ -401,7 +401,7 @@ passwordReset :: (Happstack m) =>
               -> m (Either PasswordError Text)
 passwordReset authenticateState passwordState passwordConfig =
   do method POST
-     (Just (Body body)) <- takeRequestBody =<< askRq
+     ~(Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
        Nothing -> badRequest $ Left $ CoreError JSONDecodeFailed
        (Just (ResetPasswordData password passwordConfirm resetToken)) ->

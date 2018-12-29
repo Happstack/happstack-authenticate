@@ -149,7 +149,7 @@ realm authenticateState openIdState =
                       mRealm <- query' openIdState GetOpenIdRealm
                       ok $ toJSONSuccess mRealm
                  , do method POST
-                      (Just (Body body)) <- takeRequestBody =<< askRq
+                      ~(Just (Body body)) <- takeRequestBody =<< askRq
                       case Aeson.decode body of
                         Nothing   -> badRequest $ toJSONError (CoreError JSONDecodeFailed)
                         (Just (SetRealmData mRealm)) ->
