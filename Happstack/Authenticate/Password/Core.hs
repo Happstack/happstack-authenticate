@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
 module Happstack.Authenticate.Password.Core where
 
 import Control.Applicative ((<$>), optional)
@@ -41,7 +41,12 @@ import System.FilePath                 (combine)
 import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secret, secondsSinceEpoch, verify)
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secondsSinceEpoch, verify)
+#if MIN_VERSION_jwt(0,8,0)
+import Web.JWT                         (hmacSecret)
+#else
+import Web.JWT                         (secret)
+#endif
 import Web.Routes
 import Web.Routes.TH
 
@@ -246,7 +251,7 @@ account :: (Happstack m) =>
         -> PasswordConfig
         -> Maybe (UserId, AccountURL)
         -> m (Either PasswordError UserId)
--- handle new account creation via POST to /account
+-- handle new account creation via POST to \/account
 -- FIXME: check that password and password confirmation match
 account authenticateState passwordState authenticateConfig passwordConfig Nothing =
   do method POST
@@ -281,7 +286,7 @@ account authenticateState passwordState authenticateConfig passwordConfig Nothin
             (False, Nothing) -> Nothing
             (_, Just email) -> if Email.isValid (Text.encodeUtf8 (email ^. unEmail)) then Nothing else Just $ CoreError InvalidEmail
 
--- handle updates to /account/<userId>/*
+--  handle updates to '/account/<userId>/*'
 account authenticateState passwordState authenticateConfig passwordConfig (Just (uid, url)) =
   case url of
     Password ->
@@ -369,7 +374,11 @@ issueResetToken authenticateState user =
          let claims = JWT.def { unregisteredClaims = Map.singleton "reset-password" (toJSON user)
                               , JWT.exp            = intDate $ now + 60
                               }
+#if MIN_VERSION_jwt(0,8,0)
+         return $ Right $ encodeSigned HS256 (hmacSecret $ _unSharedSecret ssecret) claims
+#else
          return $ Right $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
+#endif
 
 -- FIXME: I18N
 -- FIXME: call renderSendMail
