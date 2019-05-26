@@ -135,7 +135,7 @@ import Data.Default                    (def)
 import Data.Map                        (Map)
 import qualified Data.Map              as Map
 import Data.Maybe                      (fromMaybe, maybeToList)
-import Data.Monoid                     ((<>), mconcat)
+import Data.Monoid                     ((<>), mconcat, mempty)
 import Data.SafeCopy                   (SafeCopy, base, deriveSafeCopy)
 import Data.IxSet.Typed
 import qualified Data.IxSet.Typed      as IxSet
@@ -158,7 +158,7 @@ import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
 #if MIN_VERSION_jwt(0,8,0)
-import Web.JWT                         (hmacSecret)
+import Web.JWT                         (ClaimsMap(..), hmacSecret)
 #else
 import Web.JWT                         (secret)
 #endif
@@ -167,6 +167,12 @@ import Web.Routes                      (RouteT, PathInfo(..), nestURL)
 import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
+
+#if MIN_VERSION_jwt(0,8,0)
+#else
+unClaimsMap = id
+#endif
+
 
 -- | when creating JSON field names, drop the first character. Since
 -- we are using lens, the leading character should always be _.
@@ -632,14 +638,26 @@ issueToken authenticateState authenticateConfig user =
   do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
      admin   <- liftIO $ (authenticateConfig ^. isAuthAdmin) (user ^. userId)
      now <- liftIO getCurrentTime
-     let claims = def { exp = intDate $ utcTimeToPOSIXSeconds (addUTCTime (60*60*24*30) now)
-                      , unregisteredClaims =
+     let claims = JWTClaimsSet
+                   { iss = Nothing
+                   , sub = Nothing
+                   , aud = Nothing
+                   , exp = intDate $ utcTimeToPOSIXSeconds (addUTCTime (60*60*24*30) now)
+                   , nbf = Nothing
+                   , iat = Nothing
+                   , jti = Nothing
+                   , unregisteredClaims =
+#if MIN_VERSION_jwt(0,8,0)
+                         ClaimsMap $
+#endif
                            Map.fromList [ ("user"     , toJSON user)
                                         , ("authAdmin", toJSON admin)
                                         ]
-                      }
-#if MIN_VERSION_jwt(0,8,0)
-     return $ encodeSigned HS256 (hmacSecret $ _unSharedSecret ssecret) claims
+                   }
+#if MIN_VERSION_jwt(0,10,0)
+     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
+#elif MIN_VERSION_jwt(0,9,0)
+     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
 #else
      return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 #endif
@@ -658,7 +676,7 @@ decodeAndVerifyToken authenticateState now token =
        Nothing -> return Nothing
        (Just unverified) ->
          -- check that token has user claim
-         case Map.lookup "user" (unregisteredClaims (claims unverified)) of
+         case Map.lookup "user" (unClaimsMap (unregisteredClaims (claims unverified))) of
            Nothing -> return Nothing
            (Just uv) ->
              -- decode user json value
@@ -671,7 +689,11 @@ decodeAndVerifyToken authenticateState now token =
                       Nothing -> return Nothing
                       (Just ssecret) ->
                         -- finally we can verify all the claims
+#if MIN_VERSION_jwt(0,8,0)
+                        case verify (hmacSecret (_unSharedSecret ssecret)) unverified of
+#else
                         case verify (secret (_unSharedSecret ssecret)) unverified of
+#endif
                           Nothing -> return Nothing
                           (Just verified) -> -- check expiration
                             case exp (claims verified) of
@@ -680,7 +702,7 @@ decodeAndVerifyToken authenticateState now token =
                               (Just exp') ->
                                 if (utcTimeToPOSIXSeconds now) > (secondsSinceEpoch exp')
                                 then return Nothing
-                                else case Map.lookup "authAdmin" (unregisteredClaims (claims verified)) of
+                                else case Map.lookup "authAdmin" (unClaimsMap (unregisteredClaims (claims verified))) of
                                        Nothing -> return (Just (Token u False, verified))
                                        (Just a) ->
                                            case fromJSON a of

@@ -20,7 +20,7 @@ import qualified Data.HashMap.Strict as HashMap
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe         (fromMaybe, fromJust)
-import Data.Monoid        ((<>))
+import Data.Monoid        ((<>), mempty)
 import Data.SafeCopy (SafeCopy, base, deriveSafeCopy)
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -43,12 +43,17 @@ import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secondsSinceEpoch, verify)
 #if MIN_VERSION_jwt(0,8,0)
-import Web.JWT                         (hmacSecret)
+import Web.JWT                         (ClaimsMap(..), hmacSecret)
 #else
 import Web.JWT                         (secret)
 #endif
 import Web.Routes
 import Web.Routes.TH
+
+#if MIN_VERSION_jwt(0,8,0)
+#else
+unClaimsMap = id
+#endif
 
 ------------------------------------------------------------------------------
 -- PasswordConfig
@@ -363,7 +368,7 @@ passwordRequestReset passwordConfig authenticateState passwordState =
 issueResetToken :: (MonadIO m) =>
                    AcidState AuthenticateState
                 -> User
-                -> m (Either PasswordError JWT.JSON)
+                -> m (Either PasswordError Text)
 issueResetToken authenticateState user =
   case user ^. email of
     Nothing     -> return (Left NoEmailAddress)
@@ -371,11 +376,24 @@ issueResetToken authenticateState user =
       do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
          -- FIXME: add expiration time
          now <- liftIO getPOSIXTime
-         let claims = JWT.def { unregisteredClaims = Map.singleton "reset-password" (toJSON user)
-                              , JWT.exp            = intDate $ now + 60
-                              }
+         let claims = JWT.JWTClaimsSet
+                        { JWT.iss = Nothing
+                        , JWT.sub = Nothing
+                        , JWT.aud = Nothing
+                        , JWT.exp = intDate $ now + 60
+                        , JWT.nbf = Nothing
+                        , JWT.iat = Nothing
+                        , JWT.jti = Nothing
+                        , JWT.unregisteredClaims =
 #if MIN_VERSION_jwt(0,8,0)
-         return $ Right $ encodeSigned HS256 (hmacSecret $ _unSharedSecret ssecret) claims
+                            JWT.ClaimsMap $
+#endif
+                               Map.singleton "reset-password" (toJSON user)
+                        }
+#if MIN_VERSION_jwt(0,10,0)
+         return $ Right $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
+#elif MIN_VERSION_jwt(0,9,0)
+         return $ Right $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
 #else
          return $ Right $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 #endif
@@ -459,7 +477,7 @@ decodeAndVerifyResetToken authenticateState token =
      case mUnverified of
        Nothing -> return Nothing
        (Just unverified) ->
-         case Map.lookup "reset-password" (unregisteredClaims (claims unverified)) of
+         case Map.lookup "reset-password" (unClaimsMap (unregisteredClaims (claims unverified))) of
            Nothing -> return Nothing
            (Just uv) ->
              case fromJSON uv of
@@ -469,7 +487,11 @@ decodeAndVerifyResetToken authenticateState token =
                     case mssecret of
                       Nothing -> return Nothing
                       (Just ssecret) ->
+#if MIN_VERSION_jwt(0,8,0)
+                        case verify (hmacSecret (_unSharedSecret ssecret)) unverified of
+#else
                         case verify (secret (_unSharedSecret ssecret)) unverified of
+#endif
                           Nothing -> return Nothing
                           (Just verified) ->
                             do now <- liftIO getPOSIXTime
