@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses, RecordWildCards, ScopedTypeVariables, StandaloneDeriving, TemplateHaskell, TypeOperators, TypeFamilies, TypeSynonymInstances, UndecidableInstances, OverloadedStrings #-}
+{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses, RecordWildCards, ScopedTypeVariables, StandaloneDeriving, TemplateHaskell, TypeOperators, TypeFamilies, TypeSynonymInstances, UndecidableInstances, OverloadedStrings #-}
 {-
 
 A user is uniquely identified by their 'UserId'. A user can have one
@@ -156,7 +156,13 @@ import System.IO                       (IOMode(ReadMode), withFile)
 import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, secret, verify)
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
+#if MIN_VERSION_jwt(0,8,0)
+import Web.JWT                         (hmacSecret)
+#else
+import Web.JWT                         (secret)
+#endif
+
 import Web.Routes                      (RouteT, PathInfo(..), nestURL)
 import Web.Routes.Boomerang
 import Web.Routes.Happstack            ()
@@ -632,7 +638,11 @@ issueToken authenticateState authenticateConfig user =
                                         , ("authAdmin", toJSON admin)
                                         ]
                       }
+#if MIN_VERSION_jwt(0,8,0)
+     return $ encodeSigned HS256 (hmacSecret $ _unSharedSecret ssecret) claims
+#else
      return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
+#endif
 
 -- | decode and verify the `TokenText`. If successful, return the
 -- `Token` otherwise `Nothing`.
