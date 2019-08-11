@@ -60,6 +60,7 @@ module Happstack.Authenticate.Core
     , IxUser
     , SharedSecret(..)
     , unSharedSecret
+    , SimpleAddress(..)
     , genSharedSecret
     , genSharedSecretDevURandom
     , genSharedSecretSysRandom
@@ -110,6 +111,9 @@ module Happstack.Authenticate.Core
     , AuthenticateURL(..)
     , rAuthenticationMethods
     , rControllers
+    , systemFromAddress
+    , systemReplyToAddress
+    , systemSendmailPath
     , authenticateURL
     , nestAuthenticationMethod
     ) where
@@ -136,7 +140,7 @@ import Data.Map                        (Map)
 import qualified Data.Map              as Map
 import Data.Maybe                      (fromMaybe, maybeToList)
 import Data.Monoid                     ((<>), mconcat, mempty)
-import Data.SafeCopy                   (SafeCopy, base, deriveSafeCopy)
+import Data.SafeCopy                   (SafeCopy, Migrate(..), base, deriveSafeCopy, extension)
 import Data.IxSet.Typed
 import qualified Data.IxSet.Typed      as IxSet
 import           Data.Set              (Set)
@@ -335,14 +339,29 @@ instance Indexable UserIxs User where
              (ixFun $ maybeToList . view email)
 
 ------------------------------------------------------------------------------
+-- SimpleAddress
+------------------------------------------------------------------------------
+
+data SimpleAddress = SimpleAddress
+ { _saName :: Maybe Text
+ , _saEmail :: Email
+ }
+ deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+deriveSafeCopy 0 'base ''SimpleAddress
+makeLenses ''SimpleAddress
+
+------------------------------------------------------------------------------
 -- AuthenticateConfig
 ------------------------------------------------------------------------------
 
 -- | Various configuration options that apply to all authentication methods
 data AuthenticateConfig = AuthenticateConfig
-    { _isAuthAdmin        :: UserId -> IO Bool           -- ^ can user administrate the authentication system?
-    , _usernameAcceptable :: Username -> Maybe CoreError -- ^ enforce username policies, valid email, etc. 'Nothing' == ok, 'Just Text' == error message
-    , _requireEmail       :: Bool
+    { _isAuthAdmin          :: UserId -> IO Bool           -- ^ can user administrate the authentication system?
+    , _usernameAcceptable   :: Username -> Maybe CoreError -- ^ enforce username policies, valid email, etc. 'Nothing' == ok, 'Just Text' == error message
+    , _requireEmail         :: Bool                        -- ^ require use to supply an email address when creating an account
+    , _systemFromAddress    :: Maybe SimpleAddress         -- ^ From: line for emails sent by the server
+    , _systemReplyToAddress :: Maybe SimpleAddress         -- ^ Reply-To: line for emails sent by the server
+    , _systemSendmailPath   :: Maybe FilePath              -- ^ path to sendmail if it is not \/usr\/sbin\/sendmail
     }
     deriving (Typeable, Generic)
 makeLenses ''AuthenticateConfig

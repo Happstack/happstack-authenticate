@@ -46,7 +46,7 @@ import HSP.JMacro
 import Language.Haskell.HSX.QQ (hsx)
 import Language.Javascript.JMacro
 import Text.PrettyPrint.Leijen.Text        (Doc, displayT, renderOneLine)
-import Web.JWT (Algorithm(HS256), JWTClaimsSet(..), encodeSigned, secret, decodeAndVerifySignature)
+import Web.JWT (Algorithm(HS256), JWTClaimsSet(..), encodeSigned, decodeAndVerifySignature)
 import Web.Routes
 import Web.Routes.Happstack
 import Web.Routes.TH

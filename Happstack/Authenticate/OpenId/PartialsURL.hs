@@ -10,8 +10,7 @@ import Web.Routes                           (PathInfo(..))
 import Web.Routes.Boomerang                 (Router, (:-), (<>), boomerangFromPathSegments, boomerangToPathSegments)
 
 data PartialURL
-  = UsingGoogle
-  | UsingYahoo
+  = UsingYahoo
   | RealmForm
   deriving (Eq, Ord, Data, Typeable, Generic, Read, Show)
 
@@ -19,8 +18,7 @@ makeBoomerangs ''PartialURL
 
 partialURL :: Router () (PartialURL :- ())
 partialURL =
-  (  "using-google"         . rUsingGoogle
-  <> "using-yahoo"          . rUsingYahoo
+  (  "using-yahoo"          . rUsingYahoo
   <> "realm"                . rRealmForm
   )
 

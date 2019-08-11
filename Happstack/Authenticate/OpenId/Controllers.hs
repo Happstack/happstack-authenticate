@@ -11,7 +11,7 @@ import qualified Data.Text                as T
 import Happstack.Authenticate.Core        (AuthenticateState, AuthenticateURL, getToken, tokenIsAuthAdmin)
 import Happstack.Authenticate.OpenId.Core (GetOpenIdRealm(..), OpenIdState)
 import Happstack.Authenticate.OpenId.URL  (OpenIdURL(BeginDance, Partial, ReturnTo), nestOpenIdURL)
-import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingGoogle, UsingYahoo, RealmForm))
+import Happstack.Authenticate.OpenId.PartialsURL (PartialURL(UsingYahoo, RealmForm))
 import Happstack.Server                   (Happstack)
 import Language.Javascript.JMacro
 import Web.Routes
@@ -70,14 +70,6 @@ openIdCtrlJs mRealm showURL =
            error(callback);
        };
      }]);
-
-   openId.directive('openidGoogle', ['$rootScope', function ($rootScope) {
-     return {
-       restrict: 'E',
-       replace: true,
-       templateUrl: `(showURL (Partial UsingGoogle) [])`
-     };
-    }]);
 
    openId.directive('openidYahoo', ['$rootScope', function ($rootScope) {
      return {

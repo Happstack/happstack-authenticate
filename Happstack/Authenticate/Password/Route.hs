@@ -40,7 +40,7 @@ routePassword passwordConfig authenticateState authenticateConfig passwordState 
         Account mUrl -> toJSONResponse <$> account authenticateState passwordState authenticateConfig passwordConfig mUrl
         (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
                            return $ toResponse (html4StrictFrag, xml)
-        PasswordRequestReset -> toJSONResponse <$> passwordRequestReset passwordConfig authenticateState passwordState
+        PasswordRequestReset -> toJSONResponse <$> passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState
         PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
         UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl
 

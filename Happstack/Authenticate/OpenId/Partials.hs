@@ -26,7 +26,7 @@ import Happstack.Server.XMLGenT             ()
 import HSP.JMacro                           ()
 import Prelude                              hiding ((.), id)
 import Text.Shakespeare.I18N                (Lang, mkMessageFor, renderMessage)
-import Web.Authenticate.OpenId.Providers    (google, yahoo)
+import Web.Authenticate.OpenId.Providers    (yahoo)
 import Web.Routes
 import Web.Routes.XMLGenT                   ()
 import Web.Routes.TH                        (derivePathInfo)
@@ -35,8 +35,7 @@ type Partial' m = (RouteT AuthenticateURL (ReaderT [Lang] m))
 type Partial  m = XMLGenT (RouteT AuthenticateURL (ReaderT [Lang] m))
 
 data PartialMsgs
-  = UsingGoogleMsg
-  | UsingYahooMsg
+  = UsingYahooMsg
   | SetRealmMsg
   | OpenIdRealmMsg
 
@@ -60,24 +59,15 @@ routePartial
   -> Partial m XML
 routePartial authenticateState openIdState url =
   case url of
-    UsingGoogle    -> usingGoogle
     UsingYahoo     -> usingYahoo
     RealmForm      -> realmForm openIdState
-
-usingGoogle :: (Functor m, Monad m) =>
-                      Partial m XML
-usingGoogle =
-  do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack google))
-     [hsx|
-       <a ng-click=("openIdWindow('" <> danceURL <> "')")><img src="https://raw.githubusercontent.com/intridea/authbuttons/master/png/google_32.png" alt=UsingGoogleMsg /></a>
-     |]
 
 usingYahoo :: (Functor m, Monad m) =>
               Partial m XML
 usingYahoo =
   do danceURL <- lift $ nestOpenIdURL  $ showURL (BeginDance (Text.pack yahoo))
      [hsx|
-       <a ng-click=("openIdWindow('" <> danceURL <> "')")><img src="https://raw.githubusercontent.com/intridea/authbuttons/master/png/yahoo_32.png" alt=UsingYahooMsg /></a>
+       <a ng-click=("openIdWindow('" <> danceURL <> "')")><img src="https://raw.githubusercontent.com/Happstack/authbuttons/master/png/yahoo_32.png" alt=UsingYahooMsg /></a>
      |]
 
 realmForm

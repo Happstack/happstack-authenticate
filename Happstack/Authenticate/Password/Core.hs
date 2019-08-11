@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings, StandaloneDeriving #-}
 module Happstack.Authenticate.Password.Core where
 
 import Control.Applicative ((<$>), optional)
@@ -21,7 +21,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe         (fromMaybe, fromJust)
 import Data.Monoid        ((<>), mempty)
-import Data.SafeCopy (SafeCopy, base, deriveSafeCopy)
+import Data.SafeCopy (SafeCopy, Migrate(..), base, extension, deriveSafeCopy)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
@@ -30,13 +30,13 @@ import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
 import Network.HTTP.Types              (toQuery, renderQuery)
-import Network.Mail.Mime               (Address(..), Mail, simpleMail', renderMail', renderSendMail, sendmail)
+import Network.Mail.Mime               (Address(..), Mail(..), simpleMail', renderMail', renderSendMail, renderSendMailCustom, sendmail)
 import System.FilePath                 (combine)
 import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
@@ -127,7 +127,7 @@ makeLenses ''PasswordState
 
 initialPasswordState :: PasswordState
 initialPasswordState = PasswordState
-    { _passwords = Map.empty
+    { _passwords      = Map.empty
     }
 
 ------------------------------------------------------------------------------
@@ -338,11 +338,12 @@ instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON js
 
 -- | request reset password
 passwordRequestReset :: (Happstack m) =>
-                        PasswordConfig
+                        AuthenticateConfig
+                     -> PasswordConfig
                      -> AcidState AuthenticateState
                      -> AcidState PasswordState
                      -> m (Either PasswordError Text)
-passwordRequestReset passwordConfig authenticateState passwordState =
+passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState =
   do method POST
      ~(Just (Body body)) <- takeRequestBody =<< askRq
      case Aeson.decode body of
@@ -361,7 +362,8 @@ passwordRequestReset passwordConfig authenticateState passwordState =
                          (Right resetToken) ->
                            do let resetLink' = (passwordConfig ^. resetLink) <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
                               liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
-                              sendResetEmail toEm (Email ("no-reply@" <> (passwordConfig ^. domain))) resetLink'
+                              let from = fromMaybe (SimpleAddress Nothing (Email ("no-reply@" <> (passwordConfig ^. domain)))) (authenticateConfig ^. systemFromAddress)
+                              sendResetEmail (authenticateConfig ^. systemSendmailPath) toEm from (authenticateConfig ^. systemReplyToAddress) resetLink'
                               return (Right "password reset request email sent.") -- FIXME: I18N
 
 -- | issueResetToken
@@ -401,14 +403,22 @@ issueResetToken authenticateState user =
 -- FIXME: I18N
 -- FIXME: call renderSendMail
 sendResetEmail :: (MonadIO m) =>
-                  Email
+                  Maybe FilePath
                -> Email
+               -> SimpleAddress
+               -> Maybe SimpleAddress
                -> Text
                -> m ()
-sendResetEmail (Email toEm) (Email fromEm) resetLink = liftIO $
-  do mailBS <- renderMail' $ simpleMail' (Address Nothing toEm)  (Address (Just "no-reply") fromEm) "Reset Password Request" (LT.fromStrict resetLink)
-     -- B.putStr mailBS
-     sendmail mailBS
+sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) mReplyTo resetLink = liftIO $
+  do let mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" (LT.fromStrict resetLink)
+     case mSendmailPath of
+       Nothing -> renderSendMail mail
+       (Just sendmailPath) -> renderSendMailCustom sendmailPath ["-t"] mail
+  where
+    addReplyTo :: Maybe SimpleAddress -> Mail -> Mail
+    addReplyTo Nothing m = m
+    addReplyTo (Just (SimpleAddress rplyToNm rplyToEm)) m =
+      let m' = m { mailHeaders = (mailHeaders m) } in m'
 
 -- | JSON record for new account data
 data ResetPasswordData = ResetPasswordData
