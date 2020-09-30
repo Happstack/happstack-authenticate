@@ -88,6 +88,7 @@ module Happstack.Authenticate.Core
     , GetUserByUsername(..)
     , GetUserByUserId(..)
     , GetUserByEmail(..)
+    , GetUsersByEmail(..)
     , GetAuthenticateState(..)
     , getOrGenSharedSecret
     , Token(..)
@@ -584,6 +585,14 @@ getUserByEmail email =
     do us <- view users
        return $ getOne $ us @= email
 
+-- | find all 'Users' which match 'Email'
+--
+getUsersByEmail :: Email
+               -> Query AuthenticateState (Set User)
+getUsersByEmail email =
+    do us <- view users
+       return $ toSet $ us @= email
+
 -- | get the entire AuthenticateState value
 getAuthenticateState :: Query AuthenticateState AuthenticateState
 getAuthenticateState = ask
@@ -602,6 +611,7 @@ makeAcidic ''AuthenticateState
     , 'getUserByUsername
     , 'getUserByUserId
     , 'getUserByEmail
+    , 'getUsersByEmail
     , 'getAuthenticateState
     ]
 
