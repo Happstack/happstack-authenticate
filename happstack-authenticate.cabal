@@ -10,7 +10,7 @@ Maintainer:          jeremy@seereason.com
 Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
-Cabal-version:       >=1.8
+Cabal-version:       >=1.10
 tested-with:         GHC==8.0.1, GHC==8.2.2, GHC==8.4.1, GHC==8.6.5, GHC==8.8.3, GHC==8.10.2
 data-files:
   messages/core/en.msg
@@ -24,6 +24,7 @@ source-repository head
     location: https://github.com/Happstack/happstack-authenticate.git
 
 Library
+  Default-language:    Haskell2010
   Exposed-modules:     Happstack.Authenticate.Core
                        Happstack.Authenticate.Controller
                        Happstack.Authenticate.Route
