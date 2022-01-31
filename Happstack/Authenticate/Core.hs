@@ -88,6 +88,7 @@ module Happstack.Authenticate.Core
     , GetUserByUsername(..)
     , GetUserByUserId(..)
     , GetUserByEmail(..)
+    , GetUsers(..)
     , GetUsersByEmail(..)
     , GetAuthenticateState(..)
     , getOrGenSharedSecret
@@ -576,6 +577,13 @@ getUserByUserId userId =
     do us <- view users
        return $ getOne $ us @= userId
 
+-- | find all 'Users'
+--
+getUsers :: Query AuthenticateState (Set User)
+getUsers =
+    do us <- view users
+       return $ toSet $ us
+
 -- | look up a 'User' by their 'Email'
 --
 -- NOTE: if the email is associated with more than one account this will return 'Nothing'
@@ -610,6 +618,7 @@ makeAcidic ''AuthenticateState
     , 'deleteUser
     , 'getUserByUsername
     , 'getUserByUserId
+    , 'getUsers
     , 'getUserByEmail
     , 'getUsersByEmail
     , 'getAuthenticateState

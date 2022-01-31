@@ -55,6 +55,15 @@ initPassword :: PasswordConfig
              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
 initPassword passwordConfig basePath authenticateState authenticateConfig =
   do passwordState <- openLocalStateFrom (combine basePath "password") initialPasswordState
+     initPassword' passwordConfig passwordState basePath authenticateState authenticateConfig
+
+initPassword' :: PasswordConfig
+              -> AcidState PasswordState
+              -> FilePath
+              -> AcidState AuthenticateState
+              -> AuthenticateConfig
+              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
+initPassword' passwordConfig passwordState basePath authenticateState authenticateConfig =
      let shutdown = \normal ->
            if normal
            then createCheckpointAndClose passwordState
@@ -64,4 +73,4 @@ initPassword passwordConfig basePath authenticateState authenticateConfig =
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
                routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments
-     return (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl)
+     in pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl)
