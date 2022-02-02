@@ -30,7 +30,7 @@ import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUserId(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -356,29 +356,39 @@ passwordRequestReset authenticateConfig passwordConfig authenticateState passwor
                 case user ^. email of
                   Nothing -> return $ Left NoEmailAddress
                   (Just toEm) ->
-                    do eResetToken <- issueResetToken authenticateState user
-                       case eResetToken of
-                         (Left err) -> return (Left err)
-                         (Right resetToken) ->
-                           do let resetLink' = (passwordConfig ^. resetLink) <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
-                              liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
-                              let from = fromMaybe (SimpleAddress Nothing (Email ("no-reply@" <> (passwordConfig ^. domain)))) (authenticateConfig ^. systemFromAddress)
-                              sendResetEmail (authenticateConfig ^. systemSendmailPath) toEm from (authenticateConfig ^. systemReplyToAddress) resetLink'
-                              return (Right "password reset request email sent.") -- FIXME: I18N
+                    do resetToken <- issueResetToken authenticateState user
+                       let resetLink' = resetTokenLink (passwordConfig ^. resetLink) resetToken
+                       -- liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
+                       let from = fromMaybe (SimpleAddress Nothing (Email ("no-reply@" <> (passwordConfig ^. domain)))) (authenticateConfig ^. systemFromAddress)
+                       sendResetEmail (authenticateConfig ^. systemSendmailPath) toEm from (authenticateConfig ^. systemReplyToAddress) resetLink'
+                       return (Right "password reset request email sent.") -- FIXME: I18N
+
+-- | generate a reset token for a UserId
+resetTokenForUserId :: Text -> AcidState AuthenticateState -> AcidState PasswordState -> UserId -> IO (Either PasswordError Text)
+resetTokenForUserId resetLink authenticateState passwordState userId =
+  do mUser <- query' authenticateState (GetUserByUserId userId)
+     case mUser of
+       Nothing     -> pure $ Left (CoreError InvalidUserId)
+       (Just user) ->
+         do resetToken <- issueResetToken authenticateState user
+            pure $ Right $ resetTokenLink resetLink resetToken
+
+-- | create a link for a reset token
+resetTokenLink :: Text -- ^ base URI
+               -> Text -- ^ reset token
+               -> Text
+resetTokenLink baseURI resetToken = baseURI <> (Text.decodeUtf8 $ renderQuery True $ toQuery [("reset_token"::Text, resetToken)])
 
 -- | issueResetToken
 issueResetToken :: (MonadIO m) =>
                    AcidState AuthenticateState
                 -> User
-                -> m (Either PasswordError Text)
+                -> m Text
 issueResetToken authenticateState user =
-  case user ^. email of
-    Nothing     -> return (Left NoEmailAddress)
-    (Just addr) ->
-      do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
-         -- FIXME: add expiration time
-         now <- liftIO getPOSIXTime
-         let claims = JWT.JWTClaimsSet
+  do ssecret <- getOrGenSharedSecret authenticateState (user ^. userId)
+     -- FIXME: add expiration time
+     now <- liftIO getPOSIXTime
+     let claims = JWT.JWTClaimsSet
                         { JWT.iss = Nothing
                         , JWT.sub = Nothing
                         , JWT.aud = Nothing
@@ -393,11 +403,11 @@ issueResetToken authenticateState user =
                                Map.singleton "reset-password" (toJSON user)
                         }
 #if MIN_VERSION_jwt(0,10,0)
-         return $ Right $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
+     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
 #elif MIN_VERSION_jwt(0,9,0)
-         return $ Right $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
+     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
 #else
-         return $ Right $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
+     return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 #endif
 
 -- FIXME: I18N
