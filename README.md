@@ -15,7 +15,7 @@ http://stackoverflow.com/questions/549/the-definitive-guide-to-forms-based-websi
 
 When authenticating we generally have some process by which the user confirms their identity -- and then some other method by which we recognize that user in later requests. For example, they might submit a username and password to prove their identity. In later requests they merely submit an authentication token. Some will argue that the use of the authentication token pushes us into the realm of 'sessions' and is also therefore not RESTful.
 
+Track creation date of user account.
 
-
-
+Allow hooks to be called when a new account is created.
 

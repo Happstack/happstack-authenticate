@@ -1,6 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Happstack.Authenticate.Password.Controllers where
 
+import Data.Maybe                           (isJust, fromJust)
 import Data.Text                            (Text)
 import qualified Data.Text                  as T
 import Happstack.Authenticate.Core          (AuthenticateURL)
@@ -9,14 +10,14 @@ import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, L
 import Language.Javascript.JMacro
 import Web.Routes
 
-usernamePasswordCtrl :: (Monad m) => RouteT AuthenticateURL m JStat
-usernamePasswordCtrl =
+usernamePasswordCtrl :: (Monad m) => Maybe Text -> RouteT AuthenticateURL m JStat
+usernamePasswordCtrl postLoginRedirect =
   nestPasswordURL $
     do fn <- askRouteFn
-       return $ usernamePasswordCtrlJs fn
+       return $ usernamePasswordCtrlJs postLoginRedirect fn
 
-usernamePasswordCtrlJs :: (PasswordURL -> [(Text, Maybe Text)] -> Text) -> JStat
-usernamePasswordCtrlJs showURL = [jmacro|
+usernamePasswordCtrlJs :: Maybe Text -> (PasswordURL -> [(Text, Maybe Text)] -> Text) -> JStat
+usernamePasswordCtrlJs postLoginRedirect showURL = [jmacro|
   {
     var usernamePassword = angular.module('usernamePassword', ['happstackAuthentication']);
 
@@ -38,6 +39,7 @@ usernamePasswordCtrlJs showURL = [jmacro|
             if (datum.jrStatus == "Ok") {
               $scope.username_password_error = '';
               userService.updateFromToken(datum.jrData.token);
+              `loginRedirect postLoginRedirect`
             } else {
               userService.clearUser();
               $scope.username_password_error = datum.jrData;
@@ -299,3 +301,12 @@ usernamePasswordCtrlJs showURL = [jmacro|
 
   }
   |]
+  where
+    loginRedirect (Just plr) =
+      [jmacro|
+             // console.log(`"loginRedirect - " ++ show plr`);
+             window.location.href = `plr`;
+             |]
+    loginRedirect Nothing =
+      BlockStat []
+

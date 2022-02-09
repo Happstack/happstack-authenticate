@@ -364,6 +364,7 @@ data AuthenticateConfig = AuthenticateConfig
     , _systemFromAddress    :: Maybe SimpleAddress         -- ^ From: line for emails sent by the server
     , _systemReplyToAddress :: Maybe SimpleAddress         -- ^ Reply-To: line for emails sent by the server
     , _systemSendmailPath   :: Maybe FilePath              -- ^ path to sendmail if it is not \/usr\/sbin\/sendmail
+    , _postLoginRedirect    :: Maybe Text                  -- ^ path to redirect to after a successful login
     }
     deriving (Typeable, Generic)
 makeLenses ''AuthenticateConfig

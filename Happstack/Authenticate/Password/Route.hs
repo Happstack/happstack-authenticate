@@ -42,7 +42,7 @@ routePassword passwordConfig authenticateState authenticateConfig passwordState 
                            return $ toResponse (html4StrictFrag, xml)
         PasswordRequestReset -> toJSONResponse <$> passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState
         PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
-        UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl
+        UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl (_postLoginRedirect authenticateConfig)
 
 ------------------------------------------------------------------------------
 -- initPassword
@@ -73,4 +73,4 @@ initPassword' passwordConfig passwordState basePath authenticateState authentica
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
                routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments
-     in pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl)
+     in pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl (_postLoginRedirect authenticateConfig))
