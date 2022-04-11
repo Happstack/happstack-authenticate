@@ -2,6 +2,8 @@
 module Happstack.Authenticate.OpenId.Route where
 
 import Control.Applicative   ((<$>))
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TVar (TVar, readTVar)
 import Control.Monad.Reader  (ReaderT, runReaderT)
 import Control.Monad.Trans   (liftIO)
 import Data.Acid             (AcidState, closeAcidState, makeAcidic)
@@ -31,26 +33,28 @@ import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, nestURL, pars
 
 routeOpenId :: (Happstack m) =>
                AcidState AuthenticateState
-            -> AuthenticateConfig
+            -> TVar AuthenticateConfig
             -> AcidState OpenIdState
             -> [Text]
             -> RouteT AuthenticateURL (ReaderT [Lang] m) Response
-routeOpenId authenticateState authenticateConfig openIdState pathSegments =
+routeOpenId authenticateState authenticateConfigTV openIdState pathSegments =
   case parseSegments fromPathSegments pathSegments of
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
-      case url of
-        (Partial u) ->
-           do xml <- unXMLGenT (routePartial authenticateState openIdState u)
-              ok $ toResponse (html4StrictFrag, xml)
-        (BeginDance providerURL) ->
-          do returnURL <- nestOpenIdURL $ showURL ReturnTo
-             realm <- query' openIdState GetOpenIdRealm
-             forwardURL <- liftIO $ do manager <- newManager tlsManagerSettings
-                                       getForwardUrl providerURL returnURL realm [] manager -- [("Email", "http://schema.openid.net/contact/email")]
-             seeOther forwardURL (toResponse ())
-        ReturnTo -> token authenticateState authenticateConfig openIdState
-        Realm    -> realm authenticateState openIdState
+      do case url of
+           (Partial u) ->
+             do xml <- unXMLGenT (routePartial authenticateState openIdState u)
+                ok $ toResponse (html4StrictFrag, xml)
+           (BeginDance providerURL) ->
+             do returnURL <- nestOpenIdURL $ showURL ReturnTo
+                realm <- query' openIdState GetOpenIdRealm
+                forwardURL <- liftIO $ do manager <- newManager tlsManagerSettings
+                                          getForwardUrl providerURL returnURL realm [] manager -- [("Email", "http://schema.openid.net/contact/email")]
+                seeOther forwardURL (toResponse ())
+           ReturnTo ->
+             do authenticateConfig <- liftIO $ atomically $ readTVar authenticateConfigTV
+                token authenticateState authenticateConfig openIdState
+           Realm    -> realm authenticateState openIdState
 
 ------------------------------------------------------------------------------
 -- initOpenId
@@ -58,9 +62,9 @@ routeOpenId authenticateState authenticateConfig openIdState pathSegments =
 
 initOpenId :: FilePath
            -> AcidState AuthenticateState
-           -> AuthenticateConfig
+           -> TVar AuthenticateConfig
            -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initOpenId basePath authenticateState authenticateConfig =
+initOpenId basePath authenticateState authenticateConfigTV =
   do openIdState <- openLocalStateFrom (combine basePath "openId") initialOpenIdState
      let shutdown = \normal ->
            if normal
@@ -70,6 +74,6 @@ initOpenId basePath authenticateState authenticateConfig =
            do langsOveride <- queryString $ lookTexts' "_LANG"
               langs        <- bestLanguage <$> acceptLanguage
               mapRouteT (flip runReaderT (langsOveride ++ langs)) $
-               routeOpenId authenticateState authenticateConfig openIdState pathSegments
+               routeOpenId authenticateState authenticateConfigTV openIdState pathSegments
      return (shutdown, (openIdAuthenticationMethod, authenticationHandler), openIdCtrl authenticateState openIdState)
 

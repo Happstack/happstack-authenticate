@@ -2,6 +2,8 @@
 module Happstack.Authenticate.Route where
 
 import Control.Applicative ((<$>))
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TVar (TVar, newTVar)
 import Control.Monad.Trans (MonadIO(liftIO))
 import Data.Acid (AcidState)
 import Data.Acid.Local (openLocalStateFrom, createCheckpointAndClose)
@@ -47,16 +49,17 @@ route controllers authenticationHandlers url =
 initAuthentication
   :: Maybe FilePath
   -> AuthenticateConfig
-  -> [FilePath -> AcidState AuthenticateState -> AuthenticateConfig -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
-  -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState)
+  -> [FilePath -> AcidState AuthenticateState -> TVar AuthenticateConfig -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
+  -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState, TVar AuthenticateConfig)
 initAuthentication mBasePath authenticateConfig initMethods =
   do let authenticatePath = combine (fromMaybe "state" mBasePath) "authenticate"
      authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
+     authenticateConfigTV <- atomically $ newTVar authenticateConfig
      -- FIXME: need to deal with one of the initMethods throwing an exception
-     (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfig) initMethods
+     (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfigTV) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
          h       = route javascript (Map.fromList handlers)
-     return (cleanup, h, authenticateState)
+     return (cleanup, h, authenticateState, authenticateConfigTV)
 
 instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where
  nextInteger =

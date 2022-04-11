@@ -30,7 +30,7 @@ import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUserId(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUserId(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, createUserCallback, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
 import Happstack.Authenticate.Password.URL (AccountURL(..))
 import Happstack.Server
 import HSP.JMacro
@@ -281,6 +281,9 @@ account authenticateState passwordState authenticateConfig passwordConfig Nothin
                                     (Right user) -> do
                                        hashed <- mkHashedPass (_naPassword newAccount)
                                        update' passwordState (SetPassword (user ^. userId) hashed)
+                                       case (authenticateConfig ^. createUserCallback) of
+                                         Nothing -> pure ()
+                                         (Just callback) -> liftIO $ callback user
                                        ok $ (Right (user ^. userId))
     where
       validEmail :: Bool -> Maybe Email -> Maybe PasswordError

@@ -37,6 +37,11 @@ module Happstack.Authenticate.Core
     , isAuthAdmin
     , usernameAcceptable
     , requireEmail
+    , systemFromAddress
+    , systemReplyToAddress
+    , systemSendmailPath
+    , postLoginRedirect
+    , createUserCallback
     , HappstackAuthenticateI18N(..)
     , UserId(..)
     , unUserId
@@ -365,6 +370,7 @@ data AuthenticateConfig = AuthenticateConfig
     , _systemReplyToAddress :: Maybe SimpleAddress         -- ^ Reply-To: line for emails sent by the server
     , _systemSendmailPath   :: Maybe FilePath              -- ^ path to sendmail if it is not \/usr\/sbin\/sendmail
     , _postLoginRedirect    :: Maybe Text                  -- ^ path to redirect to after a successful login
+    , _createUserCallback   :: Maybe (User -> IO ())       -- ^ a function to call when a new user is created. Useful for adding them to mailing lists or other stuff
     }
     deriving (Typeable, Generic)
 makeLenses ''AuthenticateConfig

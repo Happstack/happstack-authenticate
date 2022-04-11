@@ -1,20 +1,24 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Happstack.Authenticate.Password.Controllers where
 
+import Control.Concurrent.STM               (atomically)
+import Control.Concurrent.STM.TVar          (TVar, readTVar)
+import Control.Monad.Trans                  (MonadIO(liftIO))
 import Data.Maybe                           (isJust, fromJust)
 import Data.Text                            (Text)
 import qualified Data.Text                  as T
-import Happstack.Authenticate.Core          (AuthenticateURL)
+import Happstack.Authenticate.Core          (AuthenticateConfig(_postLoginRedirect), AuthenticateURL)
 import Happstack.Authenticate.Password.URL (PasswordURL(Account, Token, Partial, PasswordReset, PasswordRequestReset), nestPasswordURL)
 import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, Logout, Login, LoginInline, SignupPassword, ResetPasswordForm, RequestResetPasswordForm))
 import Language.Javascript.JMacro
 import Web.Routes
 
-usernamePasswordCtrl :: (Monad m) => Maybe Text -> RouteT AuthenticateURL m JStat
-usernamePasswordCtrl postLoginRedirect =
+usernamePasswordCtrl :: (MonadIO m) => TVar AuthenticateConfig -> RouteT AuthenticateURL m JStat
+usernamePasswordCtrl authenticateConfigTV =
   nestPasswordURL $
     do fn <- askRouteFn
-       return $ usernamePasswordCtrlJs postLoginRedirect fn
+       plr <- liftIO (_postLoginRedirect <$> (atomically $ readTVar authenticateConfigTV))
+       return $ usernamePasswordCtrlJs plr fn
 
 usernamePasswordCtrlJs :: Maybe Text -> (PasswordURL -> [(Text, Maybe Text)] -> Text) -> JStat
 usernamePasswordCtrlJs postLoginRedirect showURL = [jmacro|

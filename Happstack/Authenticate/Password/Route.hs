@@ -2,6 +2,9 @@ module Happstack.Authenticate.Password.Route where
 
 import Control.Applicative   ((<$>))
 import Control.Monad.Reader  (ReaderT, runReaderT)
+import Control.Monad.Trans   (MonadIO(liftIO))
+import Control.Concurrent.STM      (atomically)
+import Control.Concurrent.STM.TVar (TVar, newTVar, readTVar)
 import Data.Acid             (AcidState, closeAcidState, makeAcidic)
 import Data.Acid.Local       (createCheckpointAndClose, openLocalStateFrom)
 import Data.Text             (Text)
@@ -25,24 +28,26 @@ import Web.Routes            (PathInfo(..), RouteT(..), mapRouteT, parseSegments
 ------------------------------------------------------------------------------
 
 routePassword :: (Happstack m) =>
-                 PasswordConfig
+                 TVar PasswordConfig
               -> AcidState AuthenticateState
-              -> AuthenticateConfig
+              -> TVar AuthenticateConfig
               -> AcidState PasswordState
               -> [Text]
               -> RouteT AuthenticateURL (ReaderT [Lang] m) Response
-routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments =
+routePassword passwordConfigTV authenticateState authenticateConfigTV passwordState pathSegments =
   case parseSegments fromPathSegments pathSegments of
     (Left _) -> notFound $ toJSONError URLDecodeFailed
     (Right url) ->
-      case url of
-        Token        -> token authenticateState authenticateConfig passwordState
-        Account mUrl -> toJSONResponse <$> account authenticateState passwordState authenticateConfig passwordConfig mUrl
-        (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
-                           return $ toResponse (html4StrictFrag, xml)
-        PasswordRequestReset -> toJSONResponse <$> passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState
-        PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
-        UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl (_postLoginRedirect authenticateConfig)
+      do authenticateConfig <- liftIO $ atomically $ readTVar authenticateConfigTV
+         passwordConfig     <- liftIO $ atomically $ readTVar passwordConfigTV
+         case url of
+           Token        -> token authenticateState authenticateConfig passwordState
+           Account mUrl -> toJSONResponse <$> account authenticateState passwordState authenticateConfig passwordConfig mUrl
+           (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
+                              return $ toResponse (html4StrictFrag, xml)
+           PasswordRequestReset -> toJSONResponse <$> passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState
+           PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
+           UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl authenticateConfigTV
 
 ------------------------------------------------------------------------------
 -- initPassword
@@ -51,26 +56,27 @@ routePassword passwordConfig authenticateState authenticateConfig passwordState 
 initPassword :: PasswordConfig
              -> FilePath
              -> AcidState AuthenticateState
-             -> AuthenticateConfig
+             -> TVar AuthenticateConfig
              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initPassword passwordConfig basePath authenticateState authenticateConfig =
+initPassword passwordConfig basePath authenticateState authenticateConfigTV =
   do passwordState <- openLocalStateFrom (combine basePath "password") initialPasswordState
-     initPassword' passwordConfig passwordState basePath authenticateState authenticateConfig
+     passwordConfigTV <- atomically $ newTVar passwordConfig
+     initPassword' passwordConfigTV passwordState basePath authenticateState authenticateConfigTV
 
-initPassword' :: PasswordConfig
+initPassword' :: TVar PasswordConfig
               -> AcidState PasswordState
               -> FilePath
               -> AcidState AuthenticateState
-              -> AuthenticateConfig
+              -> TVar AuthenticateConfig
               -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
-initPassword' passwordConfig passwordState basePath authenticateState authenticateConfig =
-     let shutdown = \normal ->
-           if normal
-           then createCheckpointAndClose passwordState
-           else closeAcidState passwordState
-         authenticationHandler pathSegments =
-           do langsOveride <- queryString $ lookTexts' "_LANG"
-              langs        <- bestLanguage <$> acceptLanguage
-              mapRouteT (flip runReaderT (langsOveride ++ langs)) $
-               routePassword passwordConfig authenticateState authenticateConfig passwordState pathSegments
-     in pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl (_postLoginRedirect authenticateConfig))
+initPassword' passwordConfigTV passwordState basePath authenticateState authenticateConfigTV =
+     do let shutdown = \normal ->
+              if normal
+              then createCheckpointAndClose passwordState
+              else closeAcidState passwordState
+            authenticationHandler pathSegments =
+              do langsOveride <- queryString $ lookTexts' "_LANG"
+                 langs        <- bestLanguage <$> acceptLanguage
+                 mapRouteT (flip runReaderT (langsOveride ++ langs)) $
+                   routePassword passwordConfigTV authenticateState authenticateConfigTV passwordState pathSegments
+        pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl authenticateConfigTV)
