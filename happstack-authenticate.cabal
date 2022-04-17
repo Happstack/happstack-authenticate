@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.7.0
+Version:             2.6.0
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -11,7 +11,7 @@ Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.10
-tested-with:         GHC==8.0.1, GHC==8.2.2, GHC==8.4.1, GHC==8.6.5, GHC==8.8.3, GHC==8.10.2
+tested-with:         GHC==8.0.1, GHC==8.2.2, GHC==8.4.1, GHC==8.6.5, GHC==8.8.3, GHC==8.10.7
 data-files:
   messages/core/en.msg
   messages/openid/error/en.msg
