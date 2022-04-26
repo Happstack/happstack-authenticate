@@ -1,5 +1,5 @@
 Name:                happstack-authenticate
-Version:             2.6.0
+Version:             2.6.1
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -11,7 +11,7 @@ Copyright:           2011-2015 SeeReason Partners, LLC
 Category:            Web
 Build-type:          Simple
 Cabal-version:       >=1.10
-tested-with:         GHC==8.0.1, GHC==8.2.2, GHC==8.4.1, GHC==8.6.5, GHC==8.8.3, GHC==8.10.7
+tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.4, GHC==8.6.5, GHC==8.8.4, GHC==8.10.7, GHC==9.0.2, GHC==9.2.2
 data-files:
   messages/core/en.msg
   messages/openid/error/en.msg
@@ -44,7 +44,7 @@ Library
 
   Build-depends:       base                         > 4     && < 5,
                        acid-state                   >= 0.6  && < 0.17,
-                       aeson                        (>= 0.4  && < 0.10) || (>= 0.11 && < 1.6),
+                       aeson                        (>= 0.4  && < 0.10) || (>= 0.11 && < 1.6) || (>= 2.0 && < 2.1),
                        authenticate                 == 1.3.*,
                        base64-bytestring            >= 1.0  && < 1.3,
                        boomerang                    >= 1.4  && < 1.5,
@@ -55,7 +55,7 @@ Library
                        filepath                     >= 1.3  && < 1.5,
                        hsx2hs                       >= 0.13 && < 0.15,
                        jmacro                       >= 0.6.11  && < 0.7,
-                       jwt                          >= 0.3  && < 0.11,
+                       jwt                          >= 0.3  && < 0.12,
                        ixset-typed                  >= 0.3  && < 0.6,
                        happstack-jmacro             >= 7.0  && < 7.1,
                        happstack-server             >= 6.0  && < 7.8,
@@ -67,11 +67,11 @@ Library
                        safecopy                     >= 0.8  && < 0.11,
                        mime-mail                    >= 0.4  && < 0.6,
                        mtl                          >= 2.0  && < 2.3,
-                       lens                         >= 4.2  && < 4.20,
+                       lens                         >= 4.2  && < 5.2,
                        pwstore-purehaskell          == 2.1.*,
                        stm                          >= 2.5  && < 2.6,
-                       text                         >= 0.11 && < 1.3,
-                       time                         >= 1.2  && < 1.12,
+                       text                         >= 0.11 && < 2.1,
+                       time                         >= 1.2  && < 1.14,
                        userid                       >= 0.1  && < 0.2,
                        random                       >= 1.0  && < 1.3,
                        shakespeare                  >= 2.0  && < 2.1,

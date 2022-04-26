@@ -13,6 +13,9 @@ import Data.Acid.Local    (createCheckpointAndClose, openLocalStateFrom)
 import qualified Data.Aeson as Aeson
 import Data.Aeson         (Value(..), Object(..), Result(..), decode, encode, fromJSON)
 import Data.Aeson.Types   (ToJSON(..), FromJSON(..), Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap as KM
+#endif
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as B
 import Data.Data (Data, Typeable)
@@ -220,7 +223,11 @@ token authenticateState authenticateConfig passwordState =
                    if not valid
                      then unauthorized $ toJSONError InvalidUsernamePassword
                      else do token <- addTokenCookie authenticateState authenticateConfig u
+#if MIN_VERSION_aeson(2,0,0)
+                             resp 201 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON token)]) -- toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
+#else
                              resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)]) -- toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
+#endif
 
 ------------------------------------------------------------------------------
 -- account
@@ -510,7 +517,9 @@ decodeAndVerifyResetToken authenticateState token =
                     case mssecret of
                       Nothing -> return Nothing
                       (Just ssecret) ->
-#if MIN_VERSION_jwt(0,8,0)
+#if MIN_VERSION_jwt(0,11,0)
+                        case verify (JWT.toVerify $ hmacSecret (_unSharedSecret ssecret)) unverified of
+#elif MIN_VERSION_jwt(0,8,0)
                         case verify (hmacSecret (_unSharedSecret ssecret)) unverified of
 #else
                         case verify (secret (_unSharedSecret ssecret)) unverified of

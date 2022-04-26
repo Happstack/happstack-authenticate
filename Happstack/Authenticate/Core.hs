@@ -168,6 +168,7 @@ import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
 import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
+import qualified Web.JWT               as JWT
 #if MIN_VERSION_jwt(0,8,0)
 import Web.JWT                         (ClaimsMap(..), hmacSecret)
 #else
@@ -734,7 +735,9 @@ decodeAndVerifyToken authenticateState now token =
                       Nothing -> return Nothing
                       (Just ssecret) ->
                         -- finally we can verify all the claims
-#if MIN_VERSION_jwt(0,8,0)
+#if MIN_VERSION_jwt(0,11,0)
+                        case verify (JWT.toVerify $ hmacSecret (_unSharedSecret ssecret)) unverified of
+#elif MIN_VERSION_jwt(0,8,0)
                         case verify (hmacSecret (_unSharedSecret ssecret)) unverified of
 #else
                         case verify (secret (_unSharedSecret ssecret)) unverified of

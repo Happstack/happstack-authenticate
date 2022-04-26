@@ -82,12 +82,14 @@ data OpenIdState = OpenIdState
     , _openIdRealm :: Maybe Text
     }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-deriveSafeCopy 2 'extension ''OpenIdState
-makeLenses ''OpenIdState
 
 instance Migrate OpenIdState where
   type MigrateFrom OpenIdState = OpenIdState_1
   migrate (OpenIdState_1 ids) = OpenIdState ids Nothing
+
+deriveSafeCopy 2 'extension ''OpenIdState
+makeLenses ''OpenIdState
+
 
 initialOpenIdState :: OpenIdState
 initialOpenIdState = OpenIdState

@@ -1,4 +1,4 @@
-happstack-authenticate [![Hackage](https://img.shields.io/hackage/v/happstack-authenticate.svg)](https://hackage.haskell.org/package/happstack-authenticate) [![Build Status](https://api.travis-ci.com/Happstack/happstack-authenticate.svg?branch=master)](https://travis-ci.com/Happstack/happstack-authenticate)
+happstack-authenticate [![Hackage](https://img.shields.io/hackage/v/happstack-authenticate.svg)](https://hackage.haskell.org/package/happstack-authenticate)
 =========
 
 This is a rewrite of the happstack-authenticate library. The original version was too clever in all the wrong areas making things like resetting your lost password impossible.
