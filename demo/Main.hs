@@ -26,16 +26,18 @@ import Data.Time (getCurrentTime)
 import Data.Unique
 import Data.Monoid ((<>))
 import GHC.Generics
-import Happstack.Authenticate.Core (AuthenticateURL(..), AuthenticateConfig(..), AuthenticateState, Email(..), User(..), Username(..), UserId(..), GetAuthenticateState(..), decodeAndVerifyToken, tokenUser, usernamePolicy)
+import Happstack.Authenticate.Core hiding (toJSONResponse)
+import Happstack.Authenticate.Handlers (AuthenticateState, AuthenticateConfig(..), GetAuthenticateState(..), decodeAndVerifyToken, usernamePolicy )
 import Happstack.Authenticate.Route (initAuthentication)
 import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
-import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
-import Happstack.Authenticate.Password.Core(PasswordConfig(..), PasswordState)
+-- import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
+--import Happstack.Authenticate.OpenId.Core  (OpenIdState)
+--import Happstack.Authenticate.OpenId.Route (initOpenId)
+--import Happstack.Authenticate.OpenId.URL   (OpenIdURL(..))
+import Happstack.Authenticate.Password.Core(PasswordConfig(..))
+import Happstack.Authenticate.Password.Handlers
 import Happstack.Authenticate.Password.Route (initPassword)
 import Happstack.Authenticate.Password.URL(PasswordURL(..))
-import Happstack.Authenticate.OpenId.Core  (OpenIdState)
-import Happstack.Authenticate.OpenId.Route (initOpenId)
-import Happstack.Authenticate.OpenId.URL   (OpenIdURL(..))
 import Happstack.Server
 import Happstack.Server.HSP.HTML
 import Happstack.Server.XMLGenT
@@ -73,6 +75,7 @@ data SiteURL
   | Authenticate AuthenticateURL
   | Api API
   | DemoAppJs
+  | HappstackAuthenticateJs
 --  | UsernamePasswordJs
     deriving (Eq, Ord, Data, Typeable, Generic)
 
@@ -92,6 +95,8 @@ route authenticateState routeAuthenticate url =
     Authenticate authenticateURL -> nestURL Authenticate $ routeAuthenticate authenticateURL
     DemoAppJs   ->
       do ok $ toResponse $ demoAppJs
+    HappstackAuthenticateJs ->
+      do serveFile (asContentType "text/javascript") "/home/stepcut/projects/haskell/happstack-authenticate/dist-newstyle/build/x86_64-linux/ghcjs-8.6.0.1/happstack-authenticate-2.6.1/x/happstack-authenticate-client/build/happstack-authenticate-client/happstack-authenticate-client.jsexe/all.js"
          {-
     UsernamePasswordJs ->
          do js1 <- nestURL Authenticate $ usernamePasswordCtrl
@@ -145,7 +150,6 @@ demoAppJs = [jmacro|
     var demoApp = angular.module('demoApp', [
       'happstackAuthentication',
       'usernamePassword',
-      'openId',
       'ngRoute'
     ]);
 
@@ -203,11 +207,12 @@ index = do
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 --        <script src="/bootstrap/js/bootstrap.min.js"></script>
 --        <script src="/js/angular.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.0-beta.0/angular.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
 --        <script src="/js/angular-route.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.0-beta.0/angular-route.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
         <script src=(routeFn DemoAppJs [])></script>
         <script src=(routeFn (Authenticate Controllers) [])></script>
+        <script id="happstack-authenticate-script" src=(routeFn HappstackAuthenticateJs []) data-base-url="/authenticate"></script>
       </head>
       <body ng-app="demoApp" ng-controller="AuthenticationCtrl as auth">
        <nav class="navbar navbar-default" role="navigation">
@@ -241,11 +246,11 @@ index = do
                   <p>If you have forgotten your password you can request it to be sent to your email address:</p>
                   <up-request-reset-password />
 
-                  <div ng-controller="OpenIdCtrl">
-                    <p>You could also sign in using your Google OpenId:</p>
-                    <openid-google />
-                    <openid-yahoo />
-                  </div>
+--                  <div ng-controller="OpenIdCtrl">
+--                    <p>You could also sign in using your Google OpenId:</p>
+--                    <openid-google />
+--                    <openid-yahoo />
+--                  </div>
 
                 </div>
 
@@ -264,11 +269,11 @@ index = do
 
                   <h2>OpenId Realm</h2>
 
-                  <div ng-controller="OpenIdCtrl">
-                    <p>If you are an admin you can edit the realm:</p>
-                    <openid-realm />
-                    <p>Your are an auth admin: {{claims.authAdmin}}</p>
-                  </div>
+--                  <div ng-controller="OpenIdCtrl">
+--                    <p>If you are an admin you can edit the realm:</p>
+--                    <openid-realm />
+--                    <p>Your are an auth admin: {{claims.authAdmin}}</p>
+--                  </div>
                 </div>
                </div>
              </div>
@@ -282,11 +287,16 @@ index = do
 
 main :: IO ()
 main =
-  do (cleanup, routeAuthenticate, authenticateState) <-
+  do (cleanup, routeAuthenticate, authenticateState, authenticateConfigTV) <-
          let authenticateConfig = AuthenticateConfig
                { _isAuthAdmin        = const $ return True
                , _usernameAcceptable = usernamePolicy
                , _requireEmail       = True
+               , _systemFromAddress    = Nothing
+               , _systemReplyToAddress = Nothing
+               , _systemSendmailPath   = Nothing
+               , _postLoginRedirect    = Nothing
+               , _createUserCallback   = Nothing
                }
              passwordConfig = PasswordConfig
                { _resetLink = "http://localhost:8000/#resetPassword"
@@ -299,7 +309,7 @@ main =
          in
            initAuthentication Nothing authenticateConfig
              [ initPassword passwordConfig
-             , initOpenId
+--             , initOpenId
              ]
      as <- query authenticateState GetAuthenticateState
      print as
@@ -309,3 +319,4 @@ main =
            , implSite "http://localhost:8000" "" $ -- FIXME: allow //localhost:8000
               setDefault Index $ mkSitePI (runRouteT $ route authenticateState routeAuthenticate)
            ]) `finally` cleanup
+

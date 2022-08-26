@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings, StandaloneDeriving #-}
-module Happstack.Authenticate.Password.Core where
+module Happstack.Authenticate.Password.Handlers where
 
 import Control.Applicative ((<$>), optional)
 import Control.Monad.Trans (MonadIO(..))
@@ -33,8 +33,10 @@ import qualified Data.Text.Lazy     as LT
 import Data.Time.Clock.POSIX          (getPOSIXTime)
 import Data.UserId (UserId)
 import GHC.Generics (Generic)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUserId(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, createUserCallback, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError, tokenUser)
+import Happstack.Authenticate.Core --  (AuthenticationHandler, AuthenticationMethod(..), AuthenticateState(..), AuthenticateConfig, usernameAcceptable, requireEmail, AuthenticateURL, CoreError(..), CreateUser(..), Email(..), unEmail, GetUserByUserId(..), GetUserByUsername(..), HappstackAuthenticateI18N(..), SharedSecret(..), SimpleAddress(..), User(..), Username(..), GetSharedSecret(..), addTokenCookie, createUserCallback, email, getToken, getOrGenSharedSecret, jsonOptions, userId, username, systemFromAddress, systemReplyToAddress, systemSendmailPath, toJSONSuccess, toJSONResponse, toJSONError)
+import Happstack.Authenticate.Handlers
 import Happstack.Authenticate.Password.URL (AccountURL(..))
+import Happstack.Authenticate.Password.Core
 import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
@@ -53,70 +55,6 @@ import Web.JWT                         (secret)
 import Web.Routes
 import Web.Routes.TH
 
-#if MIN_VERSION_jwt(0,8,0)
-#else
-unClaimsMap = id
-#endif
-
-------------------------------------------------------------------------------
--- PasswordConfig
-------------------------------------------------------------------------------
-
-data PasswordConfig = PasswordConfig
-    { _resetLink :: Text
-    , _domain :: Text
-    , _passwordAcceptable :: Text -> Maybe Text
-    }
-    deriving (Typeable, Generic)
-makeLenses ''PasswordConfig
-
-------------------------------------------------------------------------------
--- PasswordError
-------------------------------------------------------------------------------
-
-data PasswordError
-  = NotAuthenticated
-  | NotAuthorized
-  | InvalidUsername
-  | InvalidPassword
-  | InvalidUsernamePassword
-  | NoEmailAddress
-  | MissingResetToken
-  | InvalidResetToken
-  | PasswordMismatch
-  | UnacceptablePassword { passwordErrorMessageMsg :: Text }
-  | CoreError { passwordErrorMessageE :: CoreError }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-instance ToJSON   PasswordError where toJSON    = genericToJSON    jsonOptions
-instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
-
-instance ToJExpr PasswordError where
-    toJExpr = toJExpr . toJSON
-
-mkMessageFor "HappstackAuthenticateI18N" "PasswordError" "messages/password/error" ("en")
-
-------------------------------------------------------------------------------
--- HashedPass
-------------------------------------------------------------------------------
-
-newtype HashedPass = HashedPass { _unHashedPass :: ByteString }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-deriveSafeCopy 1 'base ''HashedPass
-makeLenses ''HashedPass
-
--- | hash a password string
-mkHashedPass :: (Functor m, MonadIO m) =>
-                Text         -- ^ password in plain text
-             -> m HashedPass -- ^ salted and hashed
-mkHashedPass pass = HashedPass <$> (liftIO $ makePassword (Text.encodeUtf8 pass) 12)
-
--- | verify a password
-verifyHashedPass :: Text       -- ^ password in plain text
-                 -> HashedPass -- ^ hashed version of password
-                 -> Bool
-verifyHashedPass passwd (HashedPass hashedPass) =
-    PasswordStore.verifyPassword (Text.encodeUtf8 passwd) hashedPass
-
 ------------------------------------------------------------------------------
 -- PasswordState
 ------------------------------------------------------------------------------
@@ -132,6 +70,7 @@ initialPasswordState :: PasswordState
 initialPasswordState = PasswordState
     { _passwords      = Map.empty
     }
+
 
 ------------------------------------------------------------------------------
 -- AcidState PasswordState queries/updates
@@ -166,39 +105,6 @@ makeAcidic ''PasswordState
     , 'verifyPasswordForUserId
     ]
 
-------------------------------------------------------------------------------
--- Functions
-------------------------------------------------------------------------------
-
--- | verify that the supplied username/password is valid
-verifyPassword :: (MonadIO m) =>
-                  AcidState AuthenticateState
-               -> AcidState PasswordState
-               -> Username
-               -> Text
-               -> m Bool
-verifyPassword authenticateState passwordState username password =
-    do mUser <- query' authenticateState (GetUserByUsername username)
-       case mUser of
-         Nothing -> return False
-         (Just user) ->
-             query' passwordState (VerifyPasswordForUserId (view userId user) password)
-
-------------------------------------------------------------------------------
--- API
-------------------------------------------------------------------------------
-
-data UserPass = UserPass
-    { _user     :: Username
-    , _password :: Text
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-makeLenses ''UserPass
-instance ToJSON   UserPass where toJSON    = genericToJSON    jsonOptions
-instance FromJSON UserPass where parseJSON = genericParseJSON jsonOptions
-
-instance ToJExpr UserPass where
-    toJExpr = toJExpr . toJSON
 
 ------------------------------------------------------------------------------
 -- token
@@ -254,6 +160,21 @@ data ChangePasswordData = ChangePasswordData
 makeLenses ''ChangePasswordData
 instance ToJSON   ChangePasswordData where toJSON    = genericToJSON    jsonOptions
 instance FromJSON ChangePasswordData where parseJSON = genericParseJSON jsonOptions
+
+
+-- | verify thaat the supplied username/password is valid
+verifyPassword :: (MonadIO m) =>
+                  AcidState AuthenticateState
+               -> AcidState PasswordState
+               -> Username
+               -> Text
+               -> m Bool
+verifyPassword authenticateState passwordState username password =
+    do mUser <- query' authenticateState (GetUserByUsername username)
+       case mUser of
+         Nothing -> return False
+         (Just user) ->
+             query' passwordState (VerifyPasswordForUserId (view userId user) password)
 
 -- | account handler
 account :: (Happstack m) =>
@@ -533,3 +454,8 @@ decodeAndVerifyResetToken authenticateState token =
                                    if (now > secondsSinceEpoch exp')
                                    then return Nothing
                                    else return (Just (u, verified))
+
+
+
+
+

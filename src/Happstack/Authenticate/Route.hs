@@ -15,7 +15,8 @@ import Data.Unique (hashUnique, newUnique)
 import Data.UserId (UserId)
 import HSP.JMacro (IntegerSupply(..))
 import Happstack.Authenticate.Controller (authenticateCtrl)
-import Happstack.Authenticate.Core (AuthenticateConfig, AuthenticateState, AuthenticateURL(..), AuthenticationHandler, AuthenticationHandlers, AuthenticationMethod, CoreError(HandlerNotFound), initialAuthenticateState, toJSONError)
+import Happstack.Authenticate.Core
+import Happstack.Authenticate.Handlers
 import Happstack.Server (notFound, ok, Response, ServerPartT, ToMessage(toResponse))
 import Happstack.Server.JMacro ()
 import Language.Javascript.JMacro (JStat)

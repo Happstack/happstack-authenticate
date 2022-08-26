@@ -16,7 +16,8 @@ import HSP
 import Happstack.Server.HSP.HTML            ()
 import Language.Haskell.HSX.QQ              (hsx)
 import Language.Javascript.JMacro
-import Happstack.Authenticate.Core          (AuthenticateState, AuthenticateURL, User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
+import Happstack.Authenticate.Core --          (AuthenticateState, AuthenticateURL, User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
+import Happstack.Authenticate.Handlers --          (AuthenticateState, AuthenticateURL, User(..), HappstackAuthenticateI18N(..), getToken, tokenUser, userId)
 import Happstack.Authenticate.Password.Core (PasswordError(NotAuthenticated))
 import Happstack.Authenticate.Password.URL  (AccountURL(..), PasswordURL(..), nestPasswordURL)
 import Happstack.Authenticate.Password.PartialsURL  (PartialURL(..))

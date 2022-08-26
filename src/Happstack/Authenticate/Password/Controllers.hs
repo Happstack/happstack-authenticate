@@ -7,7 +7,8 @@ import Control.Monad.Trans                  (MonadIO(liftIO))
 import Data.Maybe                           (isJust, fromJust)
 import Data.Text                            (Text)
 import qualified Data.Text                  as T
-import Happstack.Authenticate.Core          (AuthenticateConfig(_postLoginRedirect), AuthenticateURL)
+import Happstack.Authenticate.Core          (AuthenticateURL)
+import Happstack.Authenticate.Handlers      (AuthenticateConfig(_postLoginRedirect))
 import Happstack.Authenticate.Password.URL (PasswordURL(Account, Token, Partial, PasswordReset, PasswordRequestReset), nestPasswordURL)
 import Happstack.Authenticate.Password.PartialsURL (PartialURL(ChangePassword, Logout, Login, LoginInline, SignupPassword, ResetPasswordForm, RequestResetPasswordForm))
 import Language.Javascript.JMacro
@@ -234,13 +235,13 @@ usernamePasswordCtrlJs postLoginRedirect showURL = [jmacro|
     }]);
 
     // upLogin directive
-    usernamePassword.directive('upLogin', ['$rootScope', 'userService', function ($rootScope, userService) {
-      return {
-        restrict: 'E',
-        replace: true,
-        templateUrl: `(showURL (Partial Login) [])`
-      };
-    }]);
+//    usernamePassword.directive('upLogin', ['$rootScope', 'userService', function ($rootScope, userService) {
+//      return {
+//        restrict: 'E',
+//        replace: true,
+//        templateUrl: `(showURL (Partial Login) [])`
+//      };
+//    }]);
 
     // upLoginInline directive
     usernamePassword.directive('upLoginInline', ['$rootScope', 'userService', function ($rootScope, userService) {

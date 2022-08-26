@@ -9,8 +9,10 @@ import Data.Acid             (AcidState, closeAcidState, makeAcidic)
 import Data.Acid.Local       (createCheckpointAndClose, openLocalStateFrom)
 import Data.Text             (Text)
 import Data.UserId           (UserId)
-import Happstack.Authenticate.Core (AuthenticationHandler, AuthenticationMethod, AuthenticateConfig(..), AuthenticateState, AuthenticateURL, CoreError(..), toJSONError, toJSONResponse)
-import Happstack.Authenticate.Password.Core (PasswordConfig(..), PasswordError(..), PasswordState, account, initialPasswordState, passwordReset, passwordRequestReset, token)
+import Happstack.Authenticate.Core hiding (Token)
+import Happstack.Authenticate.Handlers hiding (Token)
+import Happstack.Authenticate.Password.Core
+import Happstack.Authenticate.Password.Handlers
 import Happstack.Authenticate.Password.Controllers (usernamePasswordCtrl)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
 import Happstack.Authenticate.Password.Partials (routePartial)
