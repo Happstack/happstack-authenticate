@@ -127,40 +127,17 @@ token authenticateState authenticateConfig passwordState =
               (Just u) ->
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
-                     then unauthorized $ toJSONError InvalidUsernamePassword
+                     then resp 200 $ toJSONError InvalidUsernamePassword
                      else do token <- addTokenCookie authenticateState authenticateConfig u
 #if MIN_VERSION_aeson(2,0,0)
-                             resp 201 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON token)]) -- toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
+                             resp 201 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON token)])
 #else
-                             resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)]) -- toResponseBS "application/json" $ encode $ Object $ HashMap.fromList [("token", toJSON token)]
+                             resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)])
 #endif
 
 ------------------------------------------------------------------------------
 -- account
 ------------------------------------------------------------------------------
-
--- | JSON record for new account data
-data NewAccountData = NewAccountData
-    { _naUser            :: User
-    , _naPassword        :: Text
-    , _naPasswordConfirm :: Text
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-makeLenses ''NewAccountData
-instance ToJSON   NewAccountData where toJSON    = genericToJSON    jsonOptions
-instance FromJSON NewAccountData where parseJSON = genericParseJSON jsonOptions
-
--- | JSON record for change password data
-data ChangePasswordData = ChangePasswordData
-    { _cpOldPassword        :: Text
-    , _cpNewPassword        :: Text
-    , _cpNewPasswordConfirm :: Text
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-makeLenses ''ChangePasswordData
-instance ToJSON   ChangePasswordData where toJSON    = genericToJSON    jsonOptions
-instance FromJSON ChangePasswordData where parseJSON = genericParseJSON jsonOptions
-
 
 -- | verify thaat the supplied username/password is valid
 verifyPassword :: (MonadIO m) =>
@@ -183,7 +160,7 @@ account :: (Happstack m) =>
         -> AuthenticateConfig
         -> PasswordConfig
         -> Maybe (UserId, AccountURL)
-        -> m (Either PasswordError UserId)
+        -> m (Either PasswordError Value)
 -- handle new account creation via POST to \/account
 -- FIXME: check that password and password confirmation match
 account authenticateState passwordState authenticateConfig passwordConfig Nothing =
@@ -212,7 +189,13 @@ account authenticateState passwordState authenticateConfig passwordConfig Nothin
                                        case (authenticateConfig ^. createUserCallback) of
                                          Nothing -> pure ()
                                          (Just callback) -> liftIO $ callback user
-                                       ok $ (Right (user ^. userId))
+--                                       ok $ (Right (user ^. userId))
+                                       tkn <- addTokenCookie authenticateState authenticateConfig user
+#if MIN_VERSION_aeson(2,0,0)
+                                       resp 201 $ Right (Object $ KM.fromList      [("token", toJSON tkn)])
+#else
+                                       resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON tkn)])
+#endif
     where
       validEmail :: Bool -> Maybe Email -> Maybe PasswordError
       validEmail required mEmail =
@@ -252,7 +235,13 @@ account authenticateState passwordState authenticateConfig passwordConfig (Just 
                                                Nothing -> do
                                                    pw <- mkHashedPass (changePassword ^. cpNewPassword)
                                                    update' passwordState (SetPassword uid pw)
-                                                   ok $ (Right uid)
+#if MIN_VERSION_aeson(2,0,0)
+                                                   resp 201 $ Right (Object $ KM.fromList      [("token", toJSON token)])
+#else
+                                                   resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON token)])
+#endif
+
+
 
 ------------------------------------------------------------------------------
 -- passwordReset

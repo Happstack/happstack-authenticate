@@ -207,11 +207,11 @@ index = do
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 --        <script src="/bootstrap/js/bootstrap.min.js"></script>
 --        <script src="/js/angular.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
+--        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
 --        <script src="/js/angular-route.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
-        <script src=(routeFn DemoAppJs [])></script>
-        <script src=(routeFn (Authenticate Controllers) [])></script>
+--        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
+--        <script src=(routeFn DemoAppJs [])></script>
+--        <script src=(routeFn (Authenticate Controllers) [])></script>
         <script id="happstack-authenticate-script" src=(routeFn HappstackAuthenticateJs []) data-base-url="/authenticate"></script>
       </head>
       <body ng-app="demoApp" ng-controller="AuthenticationCtrl as auth">

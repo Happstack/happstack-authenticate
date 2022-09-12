@@ -134,3 +134,24 @@ instance FromJSON UserPass where parseJSON = genericParseJSON jsonOptions
 -- instance ToJExpr UserPass where
 --    toJExpr = toJExpr . toJSON
 
+-- | JSON record for new account data
+data NewAccountData = NewAccountData
+    { _naUser            :: User
+    , _naPassword        :: Text
+    , _naPasswordConfirm :: Text
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''NewAccountData
+instance ToJSON   NewAccountData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON NewAccountData where parseJSON = genericParseJSON jsonOptions
+
+-- | JSON record for change password data
+data ChangePasswordData = ChangePasswordData
+    { _cpOldPassword        :: Text
+    , _cpNewPassword        :: Text
+    , _cpNewPasswordConfirm :: Text
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''ChangePasswordData
+instance ToJSON   ChangePasswordData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON ChangePasswordData where parseJSON = genericParseJSON jsonOptions
