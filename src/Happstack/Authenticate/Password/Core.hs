@@ -131,6 +131,10 @@ makeLenses ''UserPass
 instance ToJSON   UserPass where toJSON    = genericToJSON    jsonOptions
 instance FromJSON UserPass where parseJSON = genericParseJSON jsonOptions
 
+------------------------------------------------------------------------------
+-- NewAccountData
+------------------------------------------------------------------------------
+
 -- instance ToJExpr UserPass where
 --    toJExpr = toJExpr . toJSON
 
@@ -145,6 +149,10 @@ makeLenses ''NewAccountData
 instance ToJSON   NewAccountData where toJSON    = genericToJSON    jsonOptions
 instance FromJSON NewAccountData where parseJSON = genericParseJSON jsonOptions
 
+------------------------------------------------------------------------------
+-- ChangePasswordData
+------------------------------------------------------------------------------
+
 -- | JSON record for change password data
 data ChangePasswordData = ChangePasswordData
     { _cpOldPassword        :: Text
@@ -155,3 +163,17 @@ data ChangePasswordData = ChangePasswordData
 makeLenses ''ChangePasswordData
 instance ToJSON   ChangePasswordData where toJSON    = genericToJSON    jsonOptions
 instance FromJSON ChangePasswordData where parseJSON = genericParseJSON jsonOptions
+
+
+------------------------------------------------------------------------------
+-- RequestResetPasswordData
+------------------------------------------------------------------------------
+
+-- | JSON record for new account data
+data RequestResetPasswordData = RequestResetPasswordData
+    { _rrpUsername :: Username
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''RequestResetPasswordData
+instance ToJSON   RequestResetPasswordData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON jsonOptions

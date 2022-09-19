@@ -247,15 +247,6 @@ account authenticateState passwordState authenticateConfig passwordConfig (Just 
 -- passwordReset
 ------------------------------------------------------------------------------
 
--- | JSON record for new account data
-data RequestResetPasswordData = RequestResetPasswordData
-    { _rrpUsername :: Username
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-makeLenses ''RequestResetPasswordData
-instance ToJSON   RequestResetPasswordData where toJSON    = genericToJSON    jsonOptions
-instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON jsonOptions
-
 -- | request reset password
 passwordRequestReset :: (Happstack m) =>
                         AuthenticateConfig
@@ -342,8 +333,11 @@ sendResetEmail :: (MonadIO m) =>
 sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) mReplyTo resetLink = liftIO $
   do let mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" (LT.fromStrict resetLink)
      case mSendmailPath of
-       Nothing -> renderSendMail mail
-       (Just sendmailPath) -> renderSendMailCustom sendmailPath ["-t"] mail
+       Nothing -> do print mail
+                     renderSendMail mail
+       (Just sendmailPath) ->
+         do print mail
+            renderSendMailCustom sendmailPath ["-t"] mail
   where
     addReplyTo :: Maybe SimpleAddress -> Mail -> Mail
     addReplyTo Nothing m = m

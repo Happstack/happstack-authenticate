@@ -240,9 +240,11 @@ index = do
 
                   <up-login />
 
+                  <h2>Create an Account</h2>
                   <p>If you don't have an account already you can signup:</p>
                   <up-signup-password />
 
+                  <h2>Forget Password</h2>
                   <p>If you have forgotten your password you can request it to be sent to your email address:</p>
                   <up-request-reset-password />
 
@@ -257,6 +259,7 @@ index = do
                 <div up-authenticated=True>
                   <p>Hello {{claims.user.username}}. You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout {{claims.user.username}}</a>. Or you can change your password here:</p>
 
+                  <h2>Change Password</h2>
                   <up-change-password />
 
                   <p>You can also now access restricted content.</p>
@@ -294,7 +297,7 @@ main =
                , _requireEmail       = True
                , _systemFromAddress    = Nothing
                , _systemReplyToAddress = Nothing
-               , _systemSendmailPath   = Nothing
+               , _systemSendmailPath   = Just "/nix/store/bv1lw6a2kw0mn2y3lxhi43180idx6sp9-coreutils-8.31/bin/echo"
                , _postLoginRedirect    = Nothing
                , _createUserCallback   = Nothing
                }

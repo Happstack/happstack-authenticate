@@ -49,8 +49,8 @@ import GHCJS.Marshal(fromJSVal)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Types (JSVal)
 import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
-import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..))
-import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token),passwordAuthenticationMethod)
+import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), RequestResetPasswordData(..))
+import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
 import GHCJS.DOM.Window                (getLocalStorage)
@@ -97,6 +97,7 @@ data AuthenticateModel = AuthenticateModel
   { _usernamePasswordError :: String
   , _signupError           :: String
   , _changePasswordError   :: String
+  , _requestResetPasswordMsg :: String
   , _passwordChanged       :: Bool
   , _muser                 :: Maybe User
   , _isAdmin               :: Bool
@@ -128,6 +129,7 @@ initAuthenticateModel = AuthenticateModel
  { _usernamePasswordError = ""
  , _signupError           = ""
  , _changePasswordError   = ""
+ , _requestResetPasswordMsg = ""
  , _passwordChanged       = False
  , _muser                 = Nothing
  , _isAdmin               = False
@@ -217,6 +219,26 @@ changePasswordForm =
        </form>
       </d-if>
        |]
+
+requestResetPasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
+requestResetPasswordForm =
+  do -- url <- lift $ nestPasswordURL $ showURL PasswordReset
+     -- let changePasswordFn = "resetPassword('" <> url <> "')"
+     [domc|
+      <div>
+       <form role="form">
+        <div class="form-group">{{_requestResetPasswordMsg model}}</div>
+        <div class="form-group">
+         <label class="sr-only" for="reset-username">{{ render UsernameMsg }}</label>
+         <input class="form-control" type="text" id="rrp-reset-username" name="username" placeholder="{{render UsernameMsg}}" />
+        </div>
+        <div class="form-group">
+         <input class="form-control" type="submit" value="{{render RequestPasswordResetMsg}}" />
+        </div>
+       </form>
+      </div>
+     |]
+
 
  {-
     <span>
@@ -501,6 +523,50 @@ changePasswordHandler routeFn inputOldPassword inputNewPassword inputNewPassword
        _ -> pure ()
 
 
+requestResetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
+requestResetAjaxHandler modelTV xhr e =
+  ajaxHandler handler xhr e
+  where
+    handler jr =
+      do putStrLn $ "requestResetPasswordAjaxHandler - " ++ show jr
+         case _jrStatus jr of
+           NotOk ->
+             case _jrData jr of
+               (String err) ->
+                 do atomically $ modifyTVar' modelTV $ \m ->
+                      m & requestResetPasswordMsg .~ (Text.unpack err)
+                    doRedraws modelTV
+           Ok ->
+             do putStrLn "requestResetPasswordAjaxHandler - cake"
+                case _jrData jr of
+                  (String msg) ->
+                    do atomically $ modifyTVar' modelTV $ \m ->
+                         m & requestResetPasswordMsg .~ (Text.unpack msg)
+                       doRedraws modelTV
+
+         pure ()
+
+requestResetPasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
+requestResetPasswordHandler routeFn resetUsername modelTV e =
+  do preventDefault e
+     stopPropagation e
+     mresetUsername       <- getValue resetUsername
+
+     putStrLn $ "requestResetPasswordHandler - " ++ show (mresetUsername)
+     case (mresetUsername) of
+       (Just resetUsername) ->
+         do let requestResetPasswordData =
+                  RequestResetPasswordData { _rrpUsername    = Username $ textFromJSString resetUsername
+                                           }
+            xhr <- newXMLHttpRequest
+            open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (PasswordRequestReset)))) True
+            addEventListener xhr (ev @ReadyStateChange) (requestResetAjaxHandler modelTV xhr) False
+
+            sendString xhr (JSString.pack (LBS.unpack (encode requestResetPasswordData)))
+            pure ()
+       _ -> pure ()
+
+
 storageHandler :: TVar AuthenticateModel
                -> StorageEventObject Chili.Storage
                -> IO ()
@@ -618,6 +684,37 @@ initHappstackAuthenticateClient baseURL =
               pure updates
 
 
+     -- add requset reset password form
+     mUpRequestResetPassword <- getElementsByTagName d "up-request-reset-password"
+     redrawRequestResetPassword <-
+       -- add signup form handlers
+       case mUpRequestResetPassword of
+         Nothing ->
+           do putStrLn "up-request-reset-password element not found."
+              pure []
+         (Just upRequestResetPasswords) ->
+           do let attachRequestResetPassword oldNode =
+                    do (newNode, update) <- requestResetPasswordForm d
+                       (Just p) <- parentNode oldNode
+                       replaceChild p newNode oldNode
+
+                       -- FIXME: we techincally allow multiple change password fields on a single page, but then try to look them up via id which should be unique
+                       (Just resetUsername)        <- getElementById  d "rrp-reset-username"
+
+--                     (Just inputUsername) <- getElementById  d "username"
+--                     (Just inputPassword) <- getElementById  d "password"
+                       update =<< (atomically $ readTVar modelTV)
+                       addEventListener newNode (ev @Submit) (requestResetPasswordHandler (\url -> baseURL <> toPathInfo url) resetUsername modelTV) False
+--                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                       pure update
+--                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                     -- listen for changes to local storage
+--                     (Just w) <- window
+--                     addEventListener w (ev @Chili.Storage) (storageHandler update modelTV) False
+
+              updates <- mapNodes attachRequestResetPassword upRequestResetPasswords
+              pure updates
+
      -- add change password form
      mUpChangePasswords <- getElementsByTagName d "up-change-password"
      redrawChangePassword <-
@@ -657,7 +754,7 @@ initHappstackAuthenticateClient baseURL =
               mapM_ (\f -> f m) (redrawLogins ++ redrawSignupPassword)
 -}
      atomically $ modifyTVar' modelTV $
-       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawChangePassword
+       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawChangePassword
 
      -- listen for changes to local storage
      (Just w) <- window
