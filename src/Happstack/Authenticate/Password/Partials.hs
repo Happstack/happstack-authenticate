@@ -45,7 +45,9 @@ data PartialMsgs
   | NewPasswordMsg
   | NewPasswordConfirmationMsg
   | ChangePasswordMsg
+  | ChangePasswordAuthRequiredMsg
   | RequestPasswordResetMsg
+  | PasswordChangedMsg
 
 mkMessageFor "HappstackAuthenticateI18N" "PartialMsgs" "messages/password/partials" "en"
 
@@ -149,15 +151,15 @@ changePasswordForm userId =
         <div class="form-group">{{change_password_error}}</div>
         <div class="form-group">
          <label class="sr-only" for="password"><% OldPasswordMsg %></label>
-         <input class="form-control" ng-model="password.cpOldPassword" type="password" id="old-password" name="old-pass" placeholder=OldPasswordMsg />
+         <input class="form-control" type="password" id="cp-old-password" name="old-pass" placeholder=OldPasswordMsg />
         </div>
         <div class="form-group">
          <label class="sr-only" for="password"><% NewPasswordMsg %></label>
-         <input class="form-control" ng-model="password.cpNewPassword" type="password" id="new-password" name="new-pass" placeholder=NewPasswordMsg />
+         <input class="form-control" type="password" id="cp-new-password" name="new-pass" placeholder=NewPasswordMsg />
         </div>
         <div class="form-group">
          <label class="sr-only" for="password"><% NewPasswordConfirmationMsg %></label>
-         <input class="form-control" ng-model="password.cpNewPasswordConfirm" type="password" id="new-password-confirm" name="new-pass-confirm" placeholder=NewPasswordConfirmationMsg />
+         <input class="form-control" type="password" id="cp-new-password-confirm" name="new-pass-confirm" placeholder=NewPasswordConfirmationMsg />
         </div>
         <div class="form-group">
          <input class="form-control" type="submit" value=ChangePasswordMsg />

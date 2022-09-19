@@ -36,7 +36,7 @@ import Data.Data                       (Data, Typeable)
 import qualified Data.JSString as JSString
 import Data.JSString (JSString, unpack, pack)
 import Data.JSString.Text (textToJSString, lazyTextToJSString, textFromJSString)
-import Data.Maybe (isJust)
+import Data.Maybe (fromJust, isJust)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -49,8 +49,8 @@ import GHCJS.Marshal(fromJSVal)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Types (JSVal)
 import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
-import Happstack.Authenticate.Password.Core(UserPass(..), NewAccountData(..))
-import Happstack.Authenticate.Password.URL(PasswordURL(Account, Token),passwordAuthenticationMethod)
+import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..))
+import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
 import GHCJS.DOM.Window                (getLocalStorage)
@@ -84,7 +84,9 @@ data PartialMsgs
   | NewPasswordMsg
   | NewPasswordConfirmationMsg
   | ChangePasswordMsg
+  | ChangePasswordAuthRequiredMsg
   | RequestPasswordResetMsg
+  | PasswordChangedMsg
 
 mkMessageFor "HappstackAuthenticateI18N" "PartialMsgs" "messages/password/partials" "en"
 
@@ -94,6 +96,8 @@ render m = Text.unpack $ renderMessage HappstackAuthenticateI18N ["en"] m
 data AuthenticateModel = AuthenticateModel
   { _usernamePasswordError :: String
   , _signupError           :: String
+  , _changePasswordError   :: String
+  , _passwordChanged       :: Bool
   , _muser                 :: Maybe User
   , _isAdmin               :: Bool
   , _redraws               :: [AuthenticateModel -> IO ()]
@@ -123,6 +127,8 @@ initAuthenticateModel :: AuthenticateModel
 initAuthenticateModel = AuthenticateModel
  { _usernamePasswordError = ""
  , _signupError           = ""
+ , _changePasswordError   = ""
+ , _passwordChanged       = False
  , _muser                 = Nothing
  , _isAdmin               = False
  , _redraws               = []
@@ -131,28 +137,33 @@ initAuthenticateModel = AuthenticateModel
 signupPasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
 signupPasswordForm =
   [domc|
-       <form ng-submit="signupPassword()" role="form">
-        <div>{{_signupError model}}</div>
-        <div class="form-group">
-         <label class="sr-only" for="su-username">{{ render UsernameMsg }}</label>
-         <input class="form-control" ng-model="signup.naUser.username" type="text" id="su-username" name="su-username" value="" placeholder="{{render UsernameMsg}}" />
-        </div>
-        <div class="form-group">
-         <label class="sr-only" for="su-email">{{ render EmailMsg }}</label>
-         <input class="form-control" ng-model="signup.naUser.email" type="email" id="su-email" name="email" value="" placeholder="{{render EmailMsg}}" />
-        </div>
-        <div class="form-group">
-         <label class="sr-only" for="su-password">{{ render PasswordMsg }}</label>
-         <input class="form-control" ng-model="signup.naPassword" type="password" id="su-password" name="su-pass" value="" placeholder="{{render PasswordMsg}}" />
-        </div>
-        <div class="form-group">
-         <label class="sr-only" for="su-password-confirm">{{ render PasswordConfirmationMsg }}</label>
-         <input class="form-control" ng-model="signup.naPasswordConfirm" type="password" id="su-password-confirm" name="su-pass-confirm" value="" placeholder="{{render PasswordConfirmationMsg}}" />
-        </div>
-        <div class="form-group">
-         <input class="form-control" type="submit" value="{{render SignUpMsg}}" />
-        </div>
-       </form>
+      <d-if cond="isJust (_muser model)">
+        <p>
+          <span>You are currently logged in as </span><span>{{ maybe "Unknown" (Text.unpack . _unUsername . _username) (_muser model) }}</span><span>. To create a new account you must first </span><a data-ha-action="logout" href="#">{{ render LogoutMsg }}</a>
+        </p>
+        <form role="form">
+         <div>{{_signupError model}}</div>
+         <div class="form-group">
+          <label class="sr-only" for="su-username">{{ render UsernameMsg }}</label>
+          <input class="form-control" ng-model="signup.naUser.username" type="text" id="su-username" name="su-username" value="" placeholder="{{render UsernameMsg}}" />
+         </div>
+         <div class="form-group">
+          <label class="sr-only" for="su-email">{{ render EmailMsg }}</label>
+          <input class="form-control" ng-model="signup.naUser.email" type="email" id="su-email" name="email" value="" placeholder="{{render EmailMsg}}" />
+         </div>
+         <div class="form-group">
+          <label class="sr-only" for="su-password">{{ render PasswordMsg }}</label>
+          <input class="form-control" ng-model="signup.naPassword" type="password" id="su-password" name="su-pass" value="" placeholder="{{render PasswordMsg}}" />
+         </div>
+         <div class="form-group">
+          <label class="sr-only" for="su-password-confirm">{{ render PasswordConfirmationMsg }}</label>
+          <input class="form-control" ng-model="signup.naPasswordConfirm" type="password" id="su-password-confirm" name="su-pass-confirm" value="" placeholder="{{render PasswordConfirmationMsg}}" />
+         </div>
+         <div class="form-group">
+          <input class="form-control" type="submit" value="{{render SignUpMsg}}" />
+         </div>
+        </form>
+      </d-if>
         |]
 
 usernamePassword :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
@@ -180,6 +191,32 @@ usernamePassword =
           </form>
          </d-if>
         |]
+
+changePasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
+changePasswordForm =
+  [domc|
+      <d-if cond="(_passwordChanged model)">
+       <p>{{ render PasswordChangedMsg }}</p>
+       <form role="form">
+        <div class="form-group">{{_changePasswordError model}}</div>
+        <div class="form-group">
+         <label class="sr-only" for="password">{{ render OldPasswordMsg }}</label>
+         <input class="form-control" type="password" id="cp-old-password" name="old-pass" placeholder="{{render OldPasswordMsg }}" />
+        </div>
+        <div class="form-group">
+         <label class="sr-only" for="password">{{ render NewPasswordMsg }}</label>
+         <input class="form-control" type="password" id="cp-new-password" name="new-pass" placeholder="{{render NewPasswordMsg}}" />
+        </div>
+        <div class="form-group">
+         <label class="sr-only" for="password">{{ render NewPasswordConfirmationMsg }}</label>
+         <input class="form-control" type="password" id="cp-new-password-confirm" name="new-pass-confirm" placeholder="{{render NewPasswordConfirmationMsg}}" />
+        </div>
+        <div class="form-group">
+         <input class="form-control" type="submit" value="{{render ChangePasswordMsg}}" />
+        </div>
+       </form>
+      </d-if>
+       |]
 
  {-
     <span>
@@ -298,7 +335,7 @@ ajaxHandler handler xhr ev =
      status <- getStatus xhr
      rs      <- getReadyState xhr
      case rs of
-       4 | status `elem` [200, 201] ->
+       4 {- | status `elem` [200, 201] -} ->
              do txt <- getResponseText xhr
                 print $ "ajaxHandler - status = " <> show (status, txt)
                 case decodeStrict' (Text.encodeUtf8 txt) of
@@ -381,6 +418,28 @@ signupAjaxHandler modelTV xhr e =
                       m & signupError .~ ""
          pure ()
 
+changePasswordAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
+changePasswordAjaxHandler modelTV xhr e =
+  ajaxHandler handler xhr e
+  where
+    handler jr =
+      do putStrLn $ "changePasswordAjaxHandler - " ++ show jr
+         case _jrStatus jr of
+           NotOk ->
+             case _jrData jr of
+               (String err) ->
+                 do atomically $ modifyTVar' modelTV $ \m ->
+                      m & changePasswordError .~ (Text.unpack err)
+                    doRedraws modelTV
+           Ok ->
+             do putStrLn "changePasswordAjaxHandler - cake"
+--                extractJWT modelTV jr
+                atomically $ modifyTVar' modelTV $ \m ->
+                      m & changePasswordError .~ ""
+                        & passwordChanged .~ True
+                doRedraws modelTV
+         pure ()
+
 signupHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
 signupHandler routeFn inputUsername inputEmail inputPassword inputPasswordConfirm modelTV e =
   do preventDefault e
@@ -408,6 +467,37 @@ signupHandler routeFn inputUsername inputEmail inputPassword inputPasswordConfir
             status <- getStatus xhr
             print $ "signupHandler - status = " <> show status
             pure ()
+       _ -> pure ()
+
+changePasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
+changePasswordHandler routeFn inputOldPassword inputNewPassword inputNewPasswordConfirm modelTV e =
+  do preventDefault e
+     stopPropagation e
+     moldPassword        <- getValue inputOldPassword
+     mnewPassword        <- getValue inputNewPassword
+     mnewPasswordConfirm <- getValue inputNewPasswordConfirm
+     putStrLn $ "changePasswordHandler - " ++ show (moldPassword, mnewPassword, mnewPasswordConfirm)
+     case (moldPassword, mnewPassword, mnewPasswordConfirm) of
+       (Just oldPassword, Just newPassword, Just newPasswordConfirm) ->
+         do let changePasswordData =
+                  ChangePasswordData { _cpOldPassword        = textFromJSString oldPassword
+                                     , _cpNewPassword        = textFromJSString newPassword
+                                     , _cpNewPasswordConfirm = textFromJSString newPasswordConfirm
+                                     }
+            m <- atomically $ readTVar modelTV
+            case _muser m of
+              Nothing ->
+                do atomically $ modifyTVar' modelTV $ \m ->
+                     m & changePasswordError .~ render ChangePasswordAuthRequiredMsg
+                   doRedraws modelTV
+              (Just user) ->
+                do xhr <- newXMLHttpRequest
+                   open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (Account (Just (_userId user, Password)))))) True
+
+                   addEventListener xhr (ev @ReadyStateChange) (changePasswordAjaxHandler modelTV xhr) False
+
+                   sendString xhr (JSString.pack (LBS.unpack (encode changePasswordData)))
+                   pure ()
        _ -> pure ()
 
 
@@ -495,6 +585,7 @@ initHappstackAuthenticateClient baseURL =
               updates <- mapNodes attachLogin upLogins
               pure updates
 
+     -- add signup form
      mUpSignupPassword <- getElementsByTagName d "up-signup-password"
      redrawSignupPassword <-
        -- add signup form handlers
@@ -516,6 +607,7 @@ initHappstackAuthenticateClient baseURL =
 --                     (Just inputPassword) <- getElementById  d "password"
                        update =<< (atomically $ readTVar modelTV)
                        addEventListener newNode (ev @Submit) (signupHandler (\url -> baseURL <> toPathInfo url) inputUsername inputEmail inputPassword inputPasswordConfirm modelTV) False
+                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                        pure update
 --                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                      -- listen for changes to local storage
@@ -524,13 +616,48 @@ initHappstackAuthenticateClient baseURL =
 
               updates <- mapNodes attachSignupPassword upSignupPasswords
               pure updates
+
+
+     -- add change password form
+     mUpChangePasswords <- getElementsByTagName d "up-change-password"
+     redrawChangePassword <-
+       -- add signup form handlers
+       case mUpChangePasswords of
+         Nothing ->
+           do putStrLn "up-change-password element not found."
+              pure []
+         (Just upChangePasswords) ->
+           do let attachChangePassword oldNode =
+                    do (newNode, update) <- changePasswordForm d
+                       (Just p) <- parentNode oldNode
+                       replaceChild p newNode oldNode
+
+                       -- FIXME: we techincally allow multiple change password fields on a single page, but then try to look them up via id which should be unique
+                       (Just inputOldPassword)        <- getElementById  d "cp-old-password"
+                       (Just inputNewPassword)        <- getElementById  d "cp-new-password"
+                       (Just inputNewPasswordConfirm) <- getElementById  d "cp-new-password-confirm"
+
+--                     (Just inputUsername) <- getElementById  d "username"
+--                     (Just inputPassword) <- getElementById  d "password"
+                       update =<< (atomically $ readTVar modelTV)
+                       addEventListener newNode (ev @Submit) (changePasswordHandler (\url -> baseURL <> toPathInfo url) inputOldPassword inputNewPassword inputNewPasswordConfirm modelTV) False
+--                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                       pure update
+--                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                     -- listen for changes to local storage
+--                     (Just w) <- window
+--                     addEventListener w (ev @Chili.Storage) (storageHandler update modelTV) False
+
+              updates <- mapNodes attachChangePassword upChangePasswords
+              pure updates
+
 {-
      let update m =
            do putStrLn "storage update handler"
               mapM_ (\f -> f m) (redrawLogins ++ redrawSignupPassword)
 -}
      atomically $ modifyTVar' modelTV $
-       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword
+       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawChangePassword
 
      -- listen for changes to local storage
      (Just w) <- window
