@@ -177,3 +177,18 @@ data RequestResetPasswordData = RequestResetPasswordData
 makeLenses ''RequestResetPasswordData
 instance ToJSON   RequestResetPasswordData where toJSON    = genericToJSON    jsonOptions
 instance FromJSON RequestResetPasswordData where parseJSON = genericParseJSON jsonOptions
+
+------------------------------------------------------------------------------
+-- ResetPasswordData
+------------------------------------------------------------------------------
+
+-- | JSON record for new account data
+data ResetPasswordData = ResetPasswordData
+    { _rpPassword        :: Text
+    , _rpPasswordConfirm :: Text
+    , _rpResetToken      :: Text
+    }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''ResetPasswordData
+instance ToJSON   ResetPasswordData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON ResetPasswordData where parseJSON = genericParseJSON jsonOptions

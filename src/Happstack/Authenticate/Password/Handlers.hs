@@ -344,17 +344,6 @@ sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) 
     addReplyTo (Just (SimpleAddress rplyToNm rplyToEm)) m =
       let m' = m { mailHeaders = (mailHeaders m) } in m'
 
--- | JSON record for new account data
-data ResetPasswordData = ResetPasswordData
-    { _rpPassword        :: Text
-    , _rpPasswordConfirm :: Text
-    , _rpResetToken      :: Text
-    }
-    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
-makeLenses ''ResetPasswordData
-instance ToJSON   ResetPasswordData where toJSON    = genericToJSON    jsonOptions
-instance FromJSON ResetPasswordData where parseJSON = genericParseJSON jsonOptions
-
 passwordReset :: (Happstack m) =>
                  AcidState AuthenticateState
               -> AcidState PasswordState

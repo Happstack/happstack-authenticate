@@ -49,11 +49,13 @@ import GHCJS.Marshal(fromJSVal)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Types (JSVal)
 import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
-import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), RequestResetPasswordData(..))
+import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
-import GHCJS.DOM.Window                (getLocalStorage)
+import GHCJS.DOM.Location              (Location, getSearch)
+import qualified GHCJS.DOM.URLSearchParams as Search
+import GHCJS.DOM.Window                (getLocalStorage, getLocation)
 import GHCJS.DOM.Storage               (Storage, getItem, removeItem, setItem)
 import GHCJS.DOM.StorageEvent          (StorageEvent)
 import qualified GHCJS.DOM.StorageEvent as StoragEvent
@@ -94,14 +96,18 @@ render :: PartialMsgs -> String
 render m = Text.unpack $ renderMessage HappstackAuthenticateI18N ["en"] m
 
 data AuthenticateModel = AuthenticateModel
-  { _usernamePasswordError :: String
-  , _signupError           :: String
-  , _changePasswordError   :: String
+  { _usernamePasswordError   :: String
+  , _signupError             :: String
+  , _changePasswordError     :: String
   , _requestResetPasswordMsg :: String
-  , _passwordChanged       :: Bool
-  , _muser                 :: Maybe User
-  , _isAdmin               :: Bool
-  , _redraws               :: [AuthenticateModel -> IO ()]
+  , _resetPasswordMsg        :: String
+  , _passwordChanged         :: Bool
+  , _passwordResetRequested  :: Bool
+  , _passwordReset           :: Bool
+  , _passwordResetToken      :: Maybe Text
+  , _muser                   :: Maybe User
+  , _isAdmin                 :: Bool
+  , _redraws                 :: [AuthenticateModel -> IO ()]
   }
 makeLenses ''AuthenticateModel
 
@@ -126,14 +132,18 @@ instance FromJSON UserItem where parseJSON = genericParseJSON jsonOptions
 
 initAuthenticateModel :: AuthenticateModel
 initAuthenticateModel = AuthenticateModel
- { _usernamePasswordError = ""
- , _signupError           = ""
- , _changePasswordError   = ""
+ { _usernamePasswordError   = ""
+ , _signupError             = ""
+ , _changePasswordError     = ""
  , _requestResetPasswordMsg = ""
- , _passwordChanged       = False
- , _muser                 = Nothing
- , _isAdmin               = False
- , _redraws               = []
+ , _resetPasswordMsg        = ""
+ , _passwordChanged         = False
+ , _passwordResetRequested  = False
+ , _passwordReset           = False
+ , _passwordResetToken      = Nothing
+ , _muser                   = Nothing
+ , _isAdmin                 = False
+ , _redraws                 = []
  }
 
 signupPasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
@@ -225,19 +235,41 @@ requestResetPasswordForm =
   do -- url <- lift $ nestPasswordURL $ showURL PasswordReset
      -- let changePasswordFn = "resetPassword('" <> url <> "')"
      [domc|
+       <d-if cond="(_passwordResetRequested model)">
+         <p>{{ _requestResetPasswordMsg model }}</p>
+         <form role="form">
+          <div class="form-group">{{_requestResetPasswordMsg model}}</div>
+          <div class="form-group">
+           <label class="sr-only" for="reset-username">{{ render UsernameMsg }}</label>
+           <input class="form-control" type="text" id="rrp-reset-username" name="username" placeholder="{{render UsernameMsg}}" />
+          </div>
+          <div class="form-group">
+           <input class="form-control" type="submit" value="{{render RequestPasswordResetMsg}}" />
+          </div>
+         </form>
+       </d-if>
+     |]
+
+resetPasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
+resetPasswordForm =
+  [domc|
       <div>
        <form role="form">
-        <div class="form-group">{{_requestResetPasswordMsg model}}</div>
+        <div class="form-group">{{_resetPasswordMsg model}}</div>
         <div class="form-group">
-         <label class="sr-only" for="reset-username">{{ render UsernameMsg }}</label>
-         <input class="form-control" type="text" id="rrp-reset-username" name="username" placeholder="{{render UsernameMsg}}" />
+         <label class="sr-only" for="reset-password">{{ render PasswordMsg }}</label>
+         <input class="form-control" type="password" id="rp-reset-password" name="reset-password" placeholder="{{render PasswordMsg}}" />
         </div>
         <div class="form-group">
-         <input class="form-control" type="submit" value="{{render RequestPasswordResetMsg}}" />
+         <label class="sr-only" for="reset-password-confirm">{{ render PasswordConfirmationMsg }}</label>
+         <input class="form-control" type="password" id="rp-reset-password-confirm" name="reset-password-confirm" placeholder="{{render PasswordConfirmationMsg}}" />
+        </div>
+        <div class="form-group">
+         <input class="form-control" type="submit" value="{{render ChangePasswordMsg}}" />
         </div>
        </form>
       </div>
-     |]
+  |]
 
 
  {-
@@ -542,6 +574,7 @@ requestResetAjaxHandler modelTV xhr e =
                   (String msg) ->
                     do atomically $ modifyTVar' modelTV $ \m ->
                          m & requestResetPasswordMsg .~ (Text.unpack msg)
+                           & passwordResetRequested .~ True
                        doRedraws modelTV
 
          pure ()
@@ -563,6 +596,61 @@ requestResetPasswordHandler routeFn resetUsername modelTV e =
             addEventListener xhr (ev @ReadyStateChange) (requestResetAjaxHandler modelTV xhr) False
 
             sendString xhr (JSString.pack (LBS.unpack (encode requestResetPasswordData)))
+            pure ()
+       _ -> pure ()
+
+
+resetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
+resetAjaxHandler modelTV xhr e =
+  ajaxHandler handler xhr e
+  where
+    handler jr =
+      do putStrLn $ "resetAjaxHandler - " ++ show jr
+         case _jrStatus jr of
+           NotOk ->
+             case _jrData jr of
+               (String err) ->
+                 do atomically $ modifyTVar' modelTV $ \m ->
+                      m & resetPasswordMsg .~ (Text.unpack err)
+                    doRedraws modelTV
+           Ok ->
+             do putStrLn "resetAjaxHandler - cake"
+                case _jrData jr of
+                  (String msg) ->
+                    do atomically $ modifyTVar' modelTV $ \m ->
+                         m & resetPasswordMsg .~ (Text.unpack msg)
+                       doRedraws modelTV
+
+         pure ()
+
+
+resetPasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
+resetPasswordHandler routeFn inputNewPassword inputNewPasswordConfirm modelTV e =
+  do preventDefault e
+     stopPropagation e
+     mnewPassword        <- getValue inputNewPassword
+     mnewPasswordConfirm <- getValue inputNewPasswordConfirm
+
+     -- find reset token in URL
+     (Just w)    <- GHCJS.currentWindow
+     location    <- getLocation w
+     searchString      <- getSearch location
+     search <- Search.newURLSearchParams (searchString :: JSString)
+     mresetToken <- Search.get search ("reset_token" :: JSString)
+
+     putStrLn $ "resetPasswordHandler - " ++ show (mnewPassword, mnewPasswordConfirm)
+     case (mresetToken, mnewPassword, mnewPasswordConfirm) of
+       (Just resetToken, Just newPassword, Just newPasswordConfirm) ->
+         do let resetPasswordData =
+                  ResetPasswordData { _rpPassword        = textFromJSString newPassword
+                                    , _rpPasswordConfirm = textFromJSString newPasswordConfirm
+                                    , _rpResetToken      = textFromJSString resetToken
+                                    }
+            xhr <- newXMLHttpRequest
+            open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (PasswordReset)))) True
+            addEventListener xhr (ev @ReadyStateChange) (resetAjaxHandler modelTV xhr) False
+
+            sendString xhr (JSString.pack (LBS.unpack (encode resetPasswordData)))
             pure ()
        _ -> pure ()
 
@@ -657,7 +745,7 @@ initHappstackAuthenticateClient baseURL =
        -- add signup form handlers
        case mUpSignupPassword of
          Nothing ->
-           do putStrLn "up-signun-password element not found."
+           do putStrLn "up-signup-password element not found."
               pure []
          (Just upSignupPasswords) ->
            do let attachSignupPassword oldNode =
@@ -684,7 +772,7 @@ initHappstackAuthenticateClient baseURL =
               pure updates
 
 
-     -- add requset reset password form
+     -- add request reset password form
      mUpRequestResetPassword <- getElementsByTagName d "up-request-reset-password"
      redrawRequestResetPassword <-
        -- add signup form handlers
@@ -714,6 +802,39 @@ initHappstackAuthenticateClient baseURL =
 
               updates <- mapNodes attachRequestResetPassword upRequestResetPasswords
               pure updates
+
+     -- add reset password form
+     mUpResetPassword <- getElementsByTagName d "up-reset-password"
+     redrawResetPassword <-
+       -- add request password form handlers
+       case mUpResetPassword of
+         Nothing ->
+           do putStrLn "up-reset-password element not found."
+              pure []
+         (Just upResetPasswords) ->
+           do let attachResetPassword oldNode =
+                    do (newNode, update) <- resetPasswordForm d
+                       (Just p) <- parentNode oldNode
+                       replaceChild p newNode oldNode
+
+                       -- FIXME: we techincally allow multiple change password fields on a single page, but then try to look them up via id which should be unique
+                       (Just resetPassword)        <- getElementById  d "rp-reset-password"
+                       (Just resetPasswordConfirm) <- getElementById  d "rp-reset-password-confirm"
+
+--                     (Just inputUsername) <- getElementById  d "username"
+--                     (Just inputPassword) <- getElementById  d "password"
+                       update =<< (atomically $ readTVar modelTV)
+                       addEventListener newNode (ev @Submit) (resetPasswordHandler (\url -> baseURL <> toPathInfo url) resetPassword resetPasswordConfirm modelTV) False
+--                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                       pure update
+--                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                     -- listen for changes to local storage
+--                     (Just w) <- window
+--                     addEventListener w (ev @Chili.Storage) (storageHandler update modelTV) False
+
+              updates <- mapNodes attachResetPassword upResetPasswords
+              pure updates
+
 
      -- add change password form
      mUpChangePasswords <- getElementsByTagName d "up-change-password"
@@ -754,7 +875,7 @@ initHappstackAuthenticateClient baseURL =
               mapM_ (\f -> f m) (redrawLogins ++ redrawSignupPassword)
 -}
      atomically $ modifyTVar' modelTV $
-       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawChangePassword
+       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawResetPassword ++ redrawChangePassword
 
      -- listen for changes to local storage
      (Just w) <- window

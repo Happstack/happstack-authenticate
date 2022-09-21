@@ -37,7 +37,7 @@ import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
 import Happstack.Authenticate.Password.Core(PasswordConfig(..))
 import Happstack.Authenticate.Password.Handlers
 import Happstack.Authenticate.Password.Route (initPassword)
-import Happstack.Authenticate.Password.URL(PasswordURL(..))
+import Happstack.Authenticate.Password.URL(PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import Happstack.Server
 import Happstack.Server.HSP.HTML
 import Happstack.Server.XMLGenT
@@ -76,6 +76,7 @@ data SiteURL
   | Api API
   | DemoAppJs
   | HappstackAuthenticateJs
+  | ResetPassword
 --  | UsernamePasswordJs
     deriving (Eq, Ord, Data, Typeable, Generic)
 
@@ -95,6 +96,7 @@ route authenticateState routeAuthenticate url =
     Authenticate authenticateURL -> nestURL Authenticate $ routeAuthenticate authenticateURL
     DemoAppJs   ->
       do ok $ toResponse $ demoAppJs
+    ResetPassword -> resetPasswordPage
     HappstackAuthenticateJs ->
       do serveFile (asContentType "text/javascript") "/home/stepcut/projects/haskell/happstack-authenticate/dist-newstyle/build/x86_64-linux/ghcjs-8.6.0.1/happstack-authenticate-2.6.1/x/happstack-authenticate-client/build/happstack-authenticate-client/happstack-authenticate-client.jsexe/all.js"
          {-
@@ -288,6 +290,58 @@ index = do
     </html>
   |]
 
+resetPasswordPage :: RouteT SiteURL (ServerPartT IO) Response
+resetPasswordPage = do
+  routeFn <- askRouteFn
+  simpleView [hsx|
+    <html>
+      <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Happstack Authenticate Demo w/Angular + Bootstrap</title>
+--        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css" />
+--        <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" />
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+--        <script src="/bootstrap/js/bootstrap.min.js"></script>
+--        <script src="/js/angular.min.js"></script>
+--        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
+--        <script src="/js/angular-route.min.js"></script>
+--        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
+--        <script src=(routeFn DemoAppJs [])></script>
+--        <script src=(routeFn (Authenticate Controllers) [])></script>
+        <script id="happstack-authenticate-script" src=(routeFn HappstackAuthenticateJs []) data-base-url="/authenticate"></script>
+      </head>
+      <body>
+       <nav class="navbar navbar-default" role="navigation">
+         <div class="container-fluid" ng-controller="UsernamePasswordCtrl">
+            <up-login-inline />
+         </div>
+       </nav>
+
+       <div class="container-fluid">
+         <div class="row">
+           <div class="col-md-12">
+             <div ng-view=""></div>
+           </div>
+         </div>
+         <div class="row">
+           <div class="col-md-3"></div>
+           <div class="col-md-6">
+             <div>
+               <h1>Password Reset</h1>
+               <up-reset-password />
+             </div>
+           </div>
+           <div class="col-md-3"></div>
+         </div>
+       </div>
+      </body>
+    </html>
+  |]
+
 main :: IO ()
 main =
   do (cleanup, routeAuthenticate, authenticateState, authenticateConfigTV) <-
@@ -302,7 +356,7 @@ main =
                , _createUserCallback   = Nothing
                }
              passwordConfig = PasswordConfig
-               { _resetLink = "http://localhost:8000/#resetPassword"
+               { _resetLink = "http://localhost:8000" <> toPathInfo ResetPassword
                , _domain    =  "example.org"
                , _passwordAcceptable = \t ->
                    if T.length t >= 5
