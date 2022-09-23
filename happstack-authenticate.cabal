@@ -29,7 +29,7 @@ common shared-properties
 common shared-ghcjs-properties
    default-language: Haskell2010
    build-depends:    base64-bytestring            >= 1.0  && < 1.3,
-                     chili                        >= 0.3.2,
+                     chili                        >= 0.3.3,
                      jwt                          >= 0.3  && < 0.12
 
 Library

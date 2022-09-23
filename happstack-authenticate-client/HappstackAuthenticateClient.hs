@@ -18,7 +18,7 @@ import Control.Concurrent.STM.TVar (TVar, newTVarIO, modifyTVar', readTVar, writ
 import Control.Concurrent.STM (atomically)
 import Control.Lens ((&), (.~))
 import Control.Lens.TH (makeLenses)
-import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, ev, getData, getLength, item, key, unJSNode, fromJSNode, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, send, sendString, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setRequestHeader, setResponseType, stopPropagation, url, window)
+import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, ev, getData, getLength, item, key, unJSNode, fromJSNode, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setRequestHeader, setResponseType, stopPropagation, url, window)
 import qualified Chili.Types as Chili
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Text as Aeson
@@ -49,6 +49,7 @@ import GHCJS.Marshal(fromJSVal)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Types (JSVal)
 import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
+import qualified Happstack.Authenticate.Core as Authenticate
 import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
@@ -178,24 +179,23 @@ signupPasswordForm =
       </d-if>
         |]
 
-usernamePassword :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
-usernamePassword =
+usernamePassword :: Bool -> JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
+usernamePassword inline =
   [domc|<d-if cond="isJust (_muser model)">
           <p>
-            <span>user: </span><span>{{ show $ _muser model }}</span>
            <div class="form-group">
-             <a data-ha-action="logout" href="#">{{ render LogoutMsg }}</a>
+             <a data-ha-action="logout" href="#">{{ (render LogoutMsg) ++ " " ++ ( maybe "" (Text.unpack . _unUsername . _username) (_muser model)) }}</a>
            </div>
           </p>
-          <form role="form">
+          <form role="form" expr='{{if inline then [Attr "class" "navbar-form navbar-left"] else []}}'>
            <div class="form-group">{{ _usernamePasswordError model }}</div>
            <div class="form-group">
              <label class="sr-only" for="username">{{ render UsernameMsg }}</label>
-             <input class="form-control" type="text" id="username" name="user" placeholder="{{render UsernameMsg}}" />
+             <input class="form-control" type="text" name="username" placeholder="{{render UsernameMsg}}" />
            </div>
            <div class="form-group">
              <label class="sr-only" for="password">{{ render PasswordMsg }}</label>
-             <input class="form-control" type="password" id="password" name="pass" placeholder="{{render PasswordMsg}}" />
+             <input class="form-control" type="password" name="password" placeholder="{{render PasswordMsg}}" />
            </div>
            <div class="form-group">
              <input class="form-control" type="submit" value="{{render SignInMsg}}" />
@@ -719,6 +719,21 @@ initHappstackAuthenticateClient baseURL =
 
 
      -- add login form handlers
+     let getElementByNameAttr :: JSElement -> JSString -> IO (Maybe JSElement)
+         getElementByNameAttr node name =
+           querySelector node ("[name='" <> name <> "']")
+     let attachLogin inline oldNode =
+                    do (newNode, update) <- usernamePassword inline d
+                       let (Just newElement) = fromJSNode @JSElement newNode
+                       (Just p) <- parentNode oldNode
+                       replaceChild p newNode oldNode
+                       (Just inputUsername) <- getElementByNameAttr newElement "username"
+                       (Just inputPassword) <- getElementByNameAttr newElement "password"
+                       update =<< (atomically $ readTVar modelTV)
+                       addEventListener newNode (ev @Submit) (loginHandler (\url -> baseURL <> toPathInfo url) inputUsername inputPassword update modelTV) False
+                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                       pure update
+     -- block login form
      mUpLogins <- getElementsByTagName d "up-login"
      redrawLogins <-
        case mUpLogins of
@@ -726,17 +741,18 @@ initHappstackAuthenticateClient baseURL =
            do putStrLn "up-login element not found."
               pure []
          (Just upLogins) ->
-           do let attachLogin oldNode =
-                    do (newNode, update) <- usernamePassword d
-                       (Just p) <- parentNode oldNode
-                       replaceChild p newNode oldNode
-                       (Just inputUsername) <- getElementById  d "username"
-                       (Just inputPassword) <- getElementById  d "password"
-                       update =<< (atomically $ readTVar modelTV)
-                       addEventListener newNode (ev @Submit) (loginHandler (\url -> baseURL <> toPathInfo url) inputUsername inputPassword update modelTV) False
-                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
-                       pure update
-              updates <- mapNodes attachLogin upLogins
+           do updates <- mapNodes (attachLogin False) upLogins
+              pure updates
+
+     -- inline login form
+     mUpLoginsInline <- getElementsByTagName d "up-login-inline"
+     redrawLoginsInline <-
+       case mUpLoginsInline of
+         Nothing ->
+           do putStrLn "up-login-inline element not found."
+              pure []
+         (Just upLoginsInline) ->
+           do updates <- mapNodes (attachLogin True) upLoginsInline
               pure updates
 
      -- add signup form
@@ -875,7 +891,7 @@ initHappstackAuthenticateClient baseURL =
               mapM_ (\f -> f m) (redrawLogins ++ redrawSignupPassword)
 -}
      atomically $ modifyTVar' modelTV $
-       \m -> m & redraws .~ redrawLogins ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawResetPassword ++ redrawChangePassword
+       \m -> m & redraws .~ redrawLogins ++ redrawLoginsInline ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawResetPassword ++ redrawChangePassword
 
      -- listen for changes to local storage
      (Just w) <- window
