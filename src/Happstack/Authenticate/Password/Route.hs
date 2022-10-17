@@ -13,9 +13,7 @@ import Happstack.Authenticate.Core hiding (Token)
 import Happstack.Authenticate.Handlers hiding (Token)
 import Happstack.Authenticate.Password.Core
 import Happstack.Authenticate.Password.Handlers
-import Happstack.Authenticate.Password.Controllers (usernamePasswordCtrl)
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
-import Happstack.Authenticate.Password.Partials (routePartial)
 import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
 import Happstack.Server.JMacro ()
 import HSP                   (unXMLGenT)
@@ -45,11 +43,9 @@ routePassword passwordConfigTV authenticateState authenticateConfigTV passwordSt
          case url of
            Token        -> token authenticateState authenticateConfig passwordState
            Account mUrl -> toJSONResponse <$> account authenticateState passwordState authenticateConfig passwordConfig mUrl
-           (Partial u)  -> do xml <- unXMLGenT (routePartial authenticateState u)
-                              return $ toResponse (html4StrictFrag, xml)
            PasswordRequestReset -> toJSONResponse <$> passwordRequestReset authenticateConfig passwordConfig authenticateState passwordState
            PasswordReset        -> toJSONResponse <$> passwordReset authenticateState passwordState passwordConfig
-           UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl authenticateConfigTV
+--            UsernamePasswordCtrl -> toResponse <$> usernamePasswordCtrl authenticateConfigTV
 
 ------------------------------------------------------------------------------
 -- initPassword
@@ -59,7 +55,7 @@ initPassword :: PasswordConfig
              -> FilePath
              -> AcidState AuthenticateState
              -> TVar AuthenticateConfig
-             -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
+             -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler))
 initPassword passwordConfig basePath authenticateState authenticateConfigTV =
   do passwordState <- openLocalStateFrom (combine basePath "password") initialPasswordState
      passwordConfigTV <- atomically $ newTVar passwordConfig
@@ -70,7 +66,7 @@ initPassword' :: TVar PasswordConfig
               -> FilePath
               -> AcidState AuthenticateState
               -> TVar AuthenticateConfig
-              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)
+              -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler))
 initPassword' passwordConfigTV passwordState basePath authenticateState authenticateConfigTV =
      do let shutdown = \normal ->
               if normal
@@ -81,4 +77,4 @@ initPassword' passwordConfigTV passwordState basePath authenticateState authenti
                  langs        <- bestLanguage <$> acceptLanguage
                  mapRouteT (flip runReaderT (langsOveride ++ langs)) $
                    routePassword passwordConfigTV authenticateState authenticateConfigTV passwordState pathSegments
-        pure (shutdown, (passwordAuthenticationMethod, authenticationHandler), usernamePasswordCtrl authenticateConfigTV)
+        pure (shutdown, (passwordAuthenticationMethod, authenticationHandler))

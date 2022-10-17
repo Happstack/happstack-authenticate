@@ -14,7 +14,6 @@ import Data.Traversable (sequence)
 import Data.Unique (hashUnique, newUnique)
 import Data.UserId (UserId)
 import HSP.JMacro (IntegerSupply(..))
-import Happstack.Authenticate.Controller (authenticateCtrl)
 import Happstack.Authenticate.Core
 import Happstack.Authenticate.Handlers
 import Happstack.Server (notFound, ok, Response, ServerPartT, ToMessage(toResponse))
@@ -29,19 +28,15 @@ import Web.Routes (RouteT)
 -- route
 ------------------------------------------------------------------------------
 
-route :: [RouteT AuthenticateURL (ServerPartT IO) JStat]
-      -> AuthenticationHandlers
+route :: AuthenticationHandlers
       -> AuthenticateURL
       -> RouteT AuthenticateURL (ServerPartT IO) Response
-route controllers authenticationHandlers url =
+route authenticationHandlers url =
   do case url of
        (AuthenticationMethods (Just (authenticationMethod, pathInfo))) ->
          case Map.lookup authenticationMethod authenticationHandlers of
            (Just handler) -> handler pathInfo
            Nothing        -> notFound $ toJSONError (HandlerNotFound {- authenticationMethod-} ) --FIXME
-       Controllers ->
-         do js <- sequence (authenticateCtrl:controllers)
-            ok $ toResponse (mconcat js)
 
 ------------------------------------------------------------------------------
 -- initAuthenticate
@@ -50,16 +45,16 @@ route controllers authenticationHandlers url =
 initAuthentication
   :: Maybe FilePath
   -> AuthenticateConfig
-  -> [FilePath -> AcidState AuthenticateState -> TVar AuthenticateConfig -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler), RouteT AuthenticateURL (ServerPartT IO) JStat)]
+  -> [FilePath -> AcidState AuthenticateState -> TVar AuthenticateConfig -> IO (Bool -> IO (), (AuthenticationMethod, AuthenticationHandler)) ]
   -> IO (IO (), AuthenticateURL -> RouteT AuthenticateURL (ServerPartT IO) Response, AcidState AuthenticateState, TVar AuthenticateConfig)
 initAuthentication mBasePath authenticateConfig initMethods =
   do let authenticatePath = combine (fromMaybe "state" mBasePath) "authenticate"
      authenticateState <- openLocalStateFrom (combine authenticatePath "core") initialAuthenticateState
      authenticateConfigTV <- atomically $ newTVar authenticateConfig
      -- FIXME: need to deal with one of the initMethods throwing an exception
-     (cleanupPartial, handlers, javascript) <- unzip3 <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfigTV) initMethods
+     (cleanupPartial, handlers) <- unzip <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfigTV) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
-         h       = route javascript (Map.fromList handlers)
+         h       = route (Map.fromList handlers)
      return (cleanup, h, authenticateState, authenticateConfigTV)
 
 instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where

@@ -35,6 +35,7 @@ executable happstack-authenticate-demo
                        unordered-containers,
                        wl-pprint-text,
                        web-routes,
+                       web-routes-hsp,
                        web-routes-happstack,
                        web-routes-th
   default-language:    Haskell2010

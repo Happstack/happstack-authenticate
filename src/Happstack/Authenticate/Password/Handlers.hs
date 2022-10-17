@@ -46,7 +46,7 @@ import System.FilePath                 (combine)
 import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
 import qualified Web.JWT               as JWT
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secondsSinceEpoch, verify)
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, numericDate, secondsSinceEpoch, verify)
 #if MIN_VERSION_jwt(0,8,0)
 import Web.JWT                         (ClaimsMap(..), hmacSecret)
 #else
@@ -303,7 +303,7 @@ issueResetToken authenticateState user =
                         { JWT.iss = Nothing
                         , JWT.sub = Nothing
                         , JWT.aud = Nothing
-                        , JWT.exp = intDate $ now + 60
+                        , JWT.exp = numericDate $ now + 60
                         , JWT.nbf = Nothing
                         , JWT.iat = Nothing
                         , JWT.jti = Nothing

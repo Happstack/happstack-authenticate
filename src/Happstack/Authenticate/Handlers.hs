@@ -41,7 +41,7 @@ import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
 import Web.Routes                      (RouteT(..))
 import Web.Routes.Happstack            () -- orphan instances
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
+import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, numericDate, verify)
 import qualified Web.JWT               as JWT
 #if MIN_VERSION_jwt(0,8,0)
 import Web.JWT                         (ClaimsMap(..), hmacSecret)
@@ -365,7 +365,7 @@ issueToken authenticateState authenticateConfig user =
                    { iss = Nothing
                    , sub = Nothing
                    , aud = Nothing
-                   , exp = intDate $ utcTimeToPOSIXSeconds (addUTCTime (60*60*24*30) now)
+                   , exp = numericDate $ utcTimeToPOSIXSeconds (addUTCTime (60*60*24*30) now)
                    , nbf = Nothing
                    , iat = Nothing
                    , jti = Nothing

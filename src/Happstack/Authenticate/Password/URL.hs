@@ -9,7 +9,6 @@ import Prelude                         hiding ((.), id)
 import Web.Routes    (RouteT(..))
 import Web.Routes.TH (derivePathInfo)
 import Happstack.Authenticate.Core          (AuthenticateURL, AuthenticationMethod(..), nestAuthenticationMethod)
-import Happstack.Authenticate.Password.PartialsURL (PartialURL(..), partialURL)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Web.Routes                      (PathInfo(..))
 import Web.Routes.Boomerang
@@ -48,7 +47,6 @@ instance PathInfo AccountURL where
 data PasswordURL
   = Token
   | Account (Maybe (UserId, AccountURL))
-  | Partial PartialURL
   | PasswordRequestReset
   | PasswordReset
   | UsernamePasswordCtrl
@@ -60,7 +58,6 @@ passwordURL :: Router () (PasswordURL :- ())
 passwordURL =
   (  "token"   . rToken
   <> "account" </> rAccount . rMaybe (rPair . (rUserId . integer) </> accountURL)
-  <> "partial" </> rPartial . partialURL
   <> "password-request-reset" . rPasswordRequestReset
   <> "password-reset"         . rPasswordReset
   <> "js" </> rUsernamePasswordCtrl

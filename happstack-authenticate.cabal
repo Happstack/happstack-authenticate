@@ -38,17 +38,13 @@ Library
   Exposed-modules:
                         Happstack.Authenticate.Core
                         Happstack.Authenticate.Password.Core
-                        Happstack.Authenticate.Password.PartialsURL
                         Happstack.Authenticate.Password.URL
 
   if !impl(ghcjs)
    Exposed-modules:
-                        Happstack.Authenticate.Controller
                         Happstack.Authenticate.Handlers
                         Happstack.Authenticate.Route
-                        Happstack.Authenticate.Password.Controllers
                         Happstack.Authenticate.Password.Handlers
-                        Happstack.Authenticate.Password.Partials
                         Happstack.Authenticate.Password.Route
 
 
@@ -78,7 +74,6 @@ Library
                        web-routes                   >= 0.26 && < 0.28,
                        web-routes-boomerang         >= 0.28 && < 0.29,
                        web-routes-th                >= 0.22 && < 0.23,
-                       web-routes-hsp               >= 0.24 && < 0.25
 
   if !impl(ghcjs)
     Build-depends:

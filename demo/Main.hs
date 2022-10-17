@@ -29,11 +29,6 @@ import GHC.Generics
 import Happstack.Authenticate.Core hiding (toJSONResponse)
 import Happstack.Authenticate.Handlers (AuthenticateState, AuthenticateConfig(..), GetAuthenticateState(..), decodeAndVerifyToken, usernamePolicy )
 import Happstack.Authenticate.Route (initAuthentication)
-import Happstack.Authenticate.Password.Controllers(usernamePasswordCtrl)
--- import Happstack.Authenticate.OpenId.Controllers(openIdCtrl)
---import Happstack.Authenticate.OpenId.Core  (OpenIdState)
---import Happstack.Authenticate.OpenId.Route (initOpenId)
---import Happstack.Authenticate.OpenId.URL   (OpenIdURL(..))
 import Happstack.Authenticate.Password.Core(PasswordConfig(..))
 import Happstack.Authenticate.Password.Handlers
 import Happstack.Authenticate.Password.Route (initPassword)
@@ -52,6 +47,7 @@ import Web.JWT (Algorithm(HS256), JWTClaimsSet(..), encodeSigned, decodeAndVerif
 import Web.Routes
 import Web.Routes.Happstack
 import Web.Routes.TH
+import Web.Routes.XMLGenT () -- orphan instances for EmbedAsChild and friends
 
 ------------------------------------------------------------------------------
 ------------------------------------------------------------------------------
@@ -201,19 +197,12 @@ index = do
         <meta http-equiv="content-type" content="text/html; charset=utf-8" />
         <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Happstack Authenticate Demo w/Angular + Bootstrap</title>
+        <title>Happstack Authenticate Demo</title>
 --        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css" />
---        <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular.min.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" />
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 --        <script src="/bootstrap/js/bootstrap.min.js"></script>
---        <script src="/js/angular.min.js"></script>
---        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
---        <script src="/js/angular-route.min.js"></script>
---        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
---        <script src=(routeFn DemoAppJs [])></script>
---        <script src=(routeFn (Authenticate Controllers) [])></script>
         <script id="happstack-authenticate-script" src=(routeFn HappstackAuthenticateJs []) data-base-url="/authenticate"></script>
       </head>
       <body ng-app="demoApp" ng-controller="AuthenticationCtrl as auth">
@@ -222,8 +211,6 @@ index = do
             <up-login-inline />
          </div>
        </nav>
-
---       <div ng-click="alert('foo');">click me</div>
 
        <div class="container-fluid">
          <div class="row">
@@ -259,26 +246,11 @@ index = do
                 </div>
 
                 <div up-authenticated=True>
-                  <p>Hello {{claims.user.username}}. You are now logged in. You can <a ng-click="logout()" href="">Click Here To Logout {{claims.user.username}}</a>. Or you can change your password here:</p>
+                  <p>You are now logged in. You can change your password here:</p>
 
                   <h2>Change Password</h2>
                   <up-change-password />
 
-                  <p>You can also now access restricted content.</p>
-
-                  <div ng-controller="DemoAppCtrl">
-                    <a ng-click=("callRestricted('" <> (routeFn (Api Restricted) []) <> "')") href="">Shh, this is private!</a>
-                    <br />
-                    <div>{{message}}</div>
-                  </div>
-
-                  <h2>OpenId Realm</h2>
-
---                  <div ng-controller="OpenIdCtrl">
---                    <p>If you are an admin you can edit the realm:</p>
---                    <openid-realm />
---                    <p>Your are an auth admin: {{claims.authAdmin}}</p>
---                  </div>
                 </div>
                </div>
              </div>
@@ -299,19 +271,10 @@ resetPasswordPage = do
         <meta http-equiv="content-type" content="text/html; charset=utf-8" />
         <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Happstack Authenticate Demo w/Angular + Bootstrap</title>
---        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css" />
---        <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular.min.js"></script>
+        <title>Happstack Authenticate Demo Bootstrap</title>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" />
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
---        <script src="/bootstrap/js/bootstrap.min.js"></script>
---        <script src="/js/angular.min.js"></script>
---        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular.min.js"></script>
---        <script src="/js/angular-route.min.js"></script>
---        <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.24/angular-route.min.js"></script>
---        <script src=(routeFn DemoAppJs [])></script>
---        <script src=(routeFn (Authenticate Controllers) [])></script>
         <script id="happstack-authenticate-script" src=(routeFn HappstackAuthenticateJs []) data-base-url="/authenticate"></script>
       </head>
       <body>
