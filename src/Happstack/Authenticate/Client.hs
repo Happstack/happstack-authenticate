@@ -453,7 +453,7 @@ ajaxHandler handler xhr ev =
      status <- getStatus xhr
      rs      <- getReadyState xhr
      case rs of
-       4 {- | status `elem` [200, 201] -} ->
+       4  -> {- - | status `elem` [200, 201] -}
              do txt <- getResponseText xhr
                 debugPrint $ "ajaxHandler - status = " <> show (status, txt)
                 case decodeStrict' (Text.encodeUtf8 txt) of
