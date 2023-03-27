@@ -587,7 +587,7 @@ signupHandler routeFn sps rootNode inputUsername inputEmail inputPassword inputP
                                  , _naPasswordConfirm = textFromJSString passwordConfirm
                                  }
 
-            -- * validate plugins
+            -- validate plugins
             mvs <- mapM (\(_, ps) ->
                            case ps of
                              (SignupPlugin _ v h) ->
@@ -605,7 +605,7 @@ signupHandler routeFn sps rootNode inputUsername inputEmail inputPassword inputP
               True ->
                 do let vs = catMaybes mvs
 
-                   -- * POST results
+                   -- POST results
                    xhr <- newXMLHttpRequest
                    open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (Account Nothing)))) True
                    addEventListener xhr (ev @ReadyStateChange) (signupAjaxHandler modelTV xhr vs) False
