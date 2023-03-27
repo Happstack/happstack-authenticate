@@ -1001,6 +1001,4 @@ main =
 
 main :: IO ()
 main =
-  do clientMain
-     threadDelay 1000000
-     putStrLn "HappstackAuthenticateClient exiting"
+  do clientMain []
