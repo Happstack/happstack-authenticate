@@ -3,7 +3,7 @@ module Happstack.Authenticate.Route where
 
 import Control.Applicative ((<$>))
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TVar (TVar, newTVar)
+import Control.Concurrent.STM.TVar (TVar, newTVar, readTVar)
 import Control.Monad.Trans (MonadIO(liftIO))
 import Data.Acid (AcidState)
 import Data.Acid.Local (openLocalStateFrom, createCheckpointAndClose)
@@ -16,7 +16,8 @@ import Data.UserId (UserId)
 import HSP.JMacro (IntegerSupply(..))
 import Happstack.Authenticate.Core
 import Happstack.Authenticate.Handlers
-import Happstack.Server (notFound, ok, Response, ServerPartT, ToMessage(toResponse))
+import Happstack.Server (internalServerError, notFound, ok, Response, ServerPartT, ToMessage(toResponse))
+import Happstack.Server.FileServe (serveFile, asContentType)
 import Happstack.Server.JMacro ()
 import Language.Javascript.JMacro (JStat)
 import Prelude (($), (.), Bool(True), FilePath, fromIntegral, Functor(..), Integral(mod), IO, map, mapM, Monad(return), sequence_, unzip3)
@@ -29,14 +30,20 @@ import Web.Routes (RouteT)
 ------------------------------------------------------------------------------
 
 route :: AuthenticationHandlers
+      -> TVar AuthenticateConfig
       -> AuthenticateURL
       -> RouteT AuthenticateURL (ServerPartT IO) Response
-route authenticationHandlers url =
+route authenticationHandlers authenticateConfigTV url =
   do case url of
        (AuthenticationMethods (Just (authenticationMethod, pathInfo))) ->
          case Map.lookup authenticationMethod authenticationHandlers of
            (Just handler) -> handler pathInfo
            Nothing        -> notFound $ toJSONError (HandlerNotFound {- authenticationMethod-} ) --FIXME
+       HappstackAuthenticateClient ->
+         do ac <- liftIO $ atomically $ readTVar authenticateConfigTV
+            case _happstackAuthenticateClientPath ac of
+              Nothing -> internalServerError $ toResponse "path to happstack-authenticate-client not configured"
+              (Just p) -> serveFile (asContentType "text/javascript") p
 
 ------------------------------------------------------------------------------
 -- initAuthenticate
@@ -54,7 +61,7 @@ initAuthentication mBasePath authenticateConfig initMethods =
      -- FIXME: need to deal with one of the initMethods throwing an exception
      (cleanupPartial, handlers) <- unzip <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfigTV) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
-         h       = route (Map.fromList handlers)
+         h       = route (Map.fromList handlers) authenticateConfigTV
      return (cleanup, h, authenticateState, authenticateConfigTV)
 
 instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where

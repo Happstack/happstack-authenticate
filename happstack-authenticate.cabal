@@ -1,6 +1,6 @@
 Cabal-version:       2.2
 Name:                happstack-authenticate
-Version:             2.6.1
+Version:             3.0.0
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password and OpenId.
 Homepage:            http://www.happstack.com/
@@ -19,6 +19,11 @@ data-files:
   messages/password/error/en.msg
   messages/password/partials/en.msg
 
+flag Debug
+    Description: enable debug output
+    Default: False
+    Manual: True
+
 source-repository head
     type:     git
     location: https://github.com/Happstack/happstack-authenticate.git
@@ -27,18 +32,45 @@ common shared-properties
    default-language: Haskell2010
 
 common shared-ghcjs-properties
-   default-language: Haskell2010
-   build-depends:    base64-bytestring            >= 1.0  && < 1.3,
-                     chili                        >= 0.3.3,
+  default-language: Haskell2010
+  if impl(ghcjs)
+    build-depends:    base,
+                     base64-bytestring            >= 1.0  && < 1.3,
+                     chili                        >= 0.4.2,
                      jwt                          >= 0.3  && < 0.12
+                     , aeson
+                     , bytestring
+                     , containers
+                     , cereal
+                     , http-types
+                     , ghcjs-base
+                     , ghcjs-dom
+                     , lens
+                     , mtl
+                     , safecopy
+                     , shakespeare                  >= 2.0  && < 2.1
+                     , stm
+                     , text
+                     , template-haskell
+                     , unordered-containers
+                     , userid
+                     , web-routes
 
 Library
   import:              shared-properties
+  import:              shared-ghcjs-properties
   hs-source-dirs:      src
+  if flag(Debug)
+    cpp-options: "-DDEBUG_CLIENT"
+
   Exposed-modules:
                         Happstack.Authenticate.Core
                         Happstack.Authenticate.Password.Core
                         Happstack.Authenticate.Password.URL
+
+  if impl(ghcjs)
+   Exposed-modules:
+                        Happstack.Authenticate.Client
 
   if !impl(ghcjs)
    Exposed-modules:
@@ -85,7 +117,7 @@ Library
                        hsx2hs                       >= 0.13 && < 0.15,
                        jmacro                       >= 0.6.11  && < 0.7,
                        happstack-jmacro             >= 7.0  && < 7.1,
-                       happstack-server             >= 6.0  && < 7.8,
+                       happstack-server             >= 6.0  && < 7.9,
                        happstack-hsp                >= 7.3  && < 7.4,
                        http-conduit                 >= 2.1.0 && < 2.4,
                        http-types                   >= 0.6  && < 0.13,
@@ -106,22 +138,4 @@ executable happstack-authenticate-client
     buildable: False
   hs-source-dirs:      happstack-authenticate-client
   main-is:             HappstackAuthenticateClient.hs
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , containers
-                     , cereal
-                     , happstack-authenticate
-                     , http-types
-                     , ghcjs-base
-                     , ghcjs-dom
-                     , lens
-                     , mtl
-                     , safecopy
-                     , shakespeare                  >= 2.0  && < 2.1
-                     , stm
-                     , text
-                     , template-haskell
-                     , unordered-containers
-                     , userid
-                     , web-routes
+  build-depends:       happstack-authenticate

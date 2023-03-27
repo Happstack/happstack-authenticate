@@ -344,7 +344,7 @@ instance FromJSON AuthenticationMethod where parseJSON v = AuthenticationMethod 
 data AuthenticateURL
     = -- Users (Maybe UserId)
       AuthenticationMethods (Maybe (AuthenticationMethod, [Text]))
-    | Controllers
+    | HappstackAuthenticateClient
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 
 makeBoomerangs ''AuthenticateURL
@@ -354,7 +354,7 @@ authenticateURL :: Router () (AuthenticateURL :- ())
 authenticateURL =
   (  -- "users" </> (  rUsers . rMaybe userId )
     "authentication-methods" </> ( rAuthenticationMethods . rMaybe authenticationMethod)
-  <> "controllers" . rControllers
+  <> "happstack-authenticate-client" . rHappstackAuthenticateClient
   )
   where
     userId = rUserId . integer

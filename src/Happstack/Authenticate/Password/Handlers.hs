@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings, StandaloneDeriving #-}
+{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, DeriveGeneric, FlexibleInstances, MultiParamTypeClasses, RecordWildCards, TemplateHaskell, TypeFamilies, TypeSynonymInstances, OverloadedStrings, ScopedTypeVariables, StandaloneDeriving #-}
 module Happstack.Authenticate.Password.Handlers where
 
 import Control.Applicative ((<$>), optional)
+import Control.Exception (SomeException, catch)
 import Control.Monad.Trans (MonadIO(..))
 import Control.Lens  ((?~), (^.), (.=), (?=), assign, makeLenses, set, use, view, over)
 import Control.Lens.At (at)
@@ -54,6 +55,18 @@ import Web.JWT                         (secret)
 #endif
 import Web.Routes
 import Web.Routes.TH
+
+------------------------------------------------------------------------------
+-- PasswordConfig
+------------------------------------------------------------------------------
+
+data PasswordConfig = PasswordConfig
+    { _resetLink :: Text
+    , _domain :: Text
+    , _passwordAcceptable :: Text -> Maybe Text
+    }
+    deriving (Typeable, Generic)
+makeLenses ''PasswordConfig
 
 ------------------------------------------------------------------------------
 -- PasswordState
@@ -271,8 +284,10 @@ passwordRequestReset authenticateConfig passwordConfig authenticateState passwor
                        let resetLink' = resetTokenLink (passwordConfig ^. resetLink) resetToken
                        -- liftIO $ Text.putStrLn resetLink' -- FIXME: don't print to stdout
                        let from = fromMaybe (SimpleAddress Nothing (Email ("no-reply@" <> (passwordConfig ^. domain)))) (authenticateConfig ^. systemFromAddress)
-                       sendResetEmail (authenticateConfig ^. systemSendmailPath) toEm from (authenticateConfig ^. systemReplyToAddress) resetLink'
-                       return (Right "password reset request email sent.") -- FIXME: I18N
+                       me <- sendResetEmail (authenticateConfig ^. systemSendmailPath) toEm from (authenticateConfig ^. systemReplyToAddress) resetLink'
+                       case me of
+                         Nothing  -> pure (Right "password reset request email sent.") -- FIXME: I18N
+                         (Just e) -> pure (Left e)
 
 -- | generate a reset token for a UserId
 resetTokenForUserId :: Text -> AcidState AuthenticateState -> AcidState PasswordState -> UserId -> IO (Either PasswordError Text)
@@ -322,22 +337,24 @@ issueResetToken authenticateState user =
 #endif
 
 -- FIXME: I18N
--- FIXME: call renderSendMail
 sendResetEmail :: (MonadIO m) =>
                   Maybe FilePath
                -> Email
                -> SimpleAddress
                -> Maybe SimpleAddress
                -> Text
-               -> m ()
+               -> m (Maybe PasswordError)
 sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) mReplyTo resetLink = liftIO $
-  do let mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" (LT.fromStrict resetLink)
-     case mSendmailPath of
-       Nothing -> do print mail
-                     renderSendMail mail
-       (Just sendmailPath) ->
-         do print mail
-            renderSendMailCustom sendmailPath ["-t"] mail
+ ((do let mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" (LT.fromStrict resetLink)
+      case mSendmailPath of
+        Nothing -> do -- print mail
+                      renderSendMail mail
+                      pure Nothing
+        (Just sendmailPath) ->
+          do -- print mail
+             renderSendMailCustom sendmailPath ["-t"] mail
+             pure Nothing
+  ) `catch` (\(e :: SomeException) -> pure $ Just SendmailError))
   where
     addReplyTo :: Maybe SimpleAddress -> Mail -> Mail
     addReplyTo Nothing m = m

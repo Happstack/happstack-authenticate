@@ -317,6 +317,7 @@ main =
                , _systemSendmailPath   = Just "/nix/store/bv1lw6a2kw0mn2y3lxhi43180idx6sp9-coreutils-8.31/bin/echo"
                , _postLoginRedirect    = Nothing
                , _createUserCallback   = Nothing
+               , _happstackAuthenticateClientPath = Nothing
                }
              passwordConfig = PasswordConfig
                { _resetLink = "http://localhost:8000" <> toPathInfo ResetPassword

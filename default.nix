@@ -6,12 +6,12 @@
 , mime-mail, mtl, pwstore-purehaskell, random, safecopy
 , shakespeare, stdenv, text, time, unordered-containers, userid
 , web-routes, web-routes-boomerang, web-routes-happstack
-, web-routes-hsp, web-routes-th
+, web-routes-hsp, web-routes-th, nix-gitignore
 }:
 mkDerivation {
   pname = "happstack-authenticate";
   version = "2.3.4.7";
-  src = ./.;
+  src = nix-gitignore.gitignoreSource [] ./.;
   libraryHaskellDepends = [
     acid-state aeson authenticate base base64-bytestring boomerang
     bytestring containers data-default email-validate filepath

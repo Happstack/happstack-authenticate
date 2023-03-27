@@ -11,18 +11,15 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
-module Main where
+module Happstack.Authenticate.Client where
 
-import Happstack.Authenticate.Client (clientMain)
-import Control.Concurrent (threadDelay)
-{-
 import Control.Monad.Trans (MonadIO(liftIO))
-
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM.TVar (TVar, newTVarIO, modifyTVar', readTVar, writeTVar)
 import Control.Concurrent.STM (atomically)
 import Control.Lens ((&), (.~))
 import Control.Lens.TH (makeLenses)
-import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, ev, getData, getLength, item, key, unJSNode, fromJSNode, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setRequestHeader, setResponseType, stopPropagation, url, window)
+import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, createJSElement, ev, getData, getLength, item, key, unJSNode, fromJSNode, getChecked, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setRequestHeader, setResponseType, setTextContent, stopPropagation, toJSNode, url, window)
 import qualified Chili.Types as Chili
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Text as Aeson
@@ -40,7 +37,7 @@ import Data.Data                       (Data, Typeable)
 import qualified Data.JSString as JSString
 import Data.JSString (JSString, unpack, pack)
 import Data.JSString.Text (textToJSString, lazyTextToJSString, textFromJSString)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (catMaybes, fromJust, isJust)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -49,9 +46,11 @@ import Data.UserId (UserId(..))
 import Dominator.Types (JSDocument, JSElement, JSNode, MouseEvent(..), MouseEventObject(..), addEventListener, fromEventTarget, getAttribute, getElementById, getElementsByTagName, toJSNode, appendChild, currentDocument, removeChildren, target)
 import Dominator.DOMC
 import Dominator.JSDOM
-import GHCJS.Marshal(fromJSVal)
+import GHCJS.Marshal(toJSVal, fromJSVal)
+import GHCJS.Foreign.Export (Export, export, derefExport)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
-import GHCJS.Types (JSVal)
+import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
+import GHCJS.Types (JSVal, jsval)
 import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
 import qualified Happstack.Authenticate.Core as Authenticate
 import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
@@ -67,6 +66,7 @@ import qualified GHCJS.DOM.StorageEvent as StoragEvent
 import qualified GHCJS.DOM             as GHCJS
 import System.IO (hFlush, stdout, hGetBuffering, hSetBuffering, BufferMode(..))
 import Text.Shakespeare.I18N                (Lang, mkMessageFor, renderMessage)
+import Unsafe.Coerce                   (unsafeCoerce)
 import Web.JWT                         (Algorithm(HS256), JWT, UnverifiedJWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
 import qualified Web.JWT               as JWT
 #if MIN_VERSION_jwt(0,8,0)
@@ -76,12 +76,14 @@ import Web.JWT                         (secret)
 #endif
 import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
-
-
 debugStrLn = putStrLn
 
 debugPrint :: Show a => a -> IO ()
 debugPrint = print
+
+getElementByNameAttr :: JSElement -> JSString -> IO (Maybe JSElement)
+getElementByNameAttr node name =
+           querySelector node ("[name='" <> name <> "']")
 
 data HappstackAuthenticateI18N = HappstackAuthenticateI18N
 
@@ -132,9 +134,9 @@ userKey :: JSString
 userKey = "user"
 
 data UserItem = UserItem
-  { _authAdmin :: Bool
-  , _user      :: User
-  , _token     :: Text
+  { _uiAuthAdmin :: Bool
+  , _uiUser      :: User
+  , _uiToken     :: Text
 --  , _claims          :: JWTClaimsSet
   }
   deriving (Eq, Show, Generic)
@@ -146,7 +148,7 @@ initAuthenticateModel = AuthenticateModel
  { _usernamePasswordError     = ""
  , _signupError               = ""
  , _changePasswordError       = ""
- , _requestResetPasswordMsg = ""
+ , _requestResetPasswordMsg   = ""
  , _resetPasswordMsg          = ""
  , _passwordChanged           = False
  , _passwordResetRequested    = False
@@ -158,13 +160,47 @@ initAuthenticateModel = AuthenticateModel
  }
 
 data SignupPlugin = forall a. SignupPlugin
-  { spHTML     :: JSNode -> IO ()
-  , spValidate :: IO (Maybe a)
-  , spHandle   :: a -> IO ()
+  { spHTML     :: IO JSNode
+  , spValidate :: JSElement -> IO (Maybe a)
+  , spHandle   :: a -> UserId -> IO ()
   }
 
-signupPasswordForm :: JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
-signupPasswordForm =
+instance Show SignupPlugin where
+  show _ = "SignupPlugin"
+
+dummyForm :: JSDocument -> IO (JSNode, () -> IO ())
+dummyForm =
+  [domc|
+      <div class="form-check">
+       <input class="form-control" name="dp-somecheckbox" type="checkbox"  />
+       <label class="form-check-label">This is a dummy checkbox.</label>
+      </div>
+       |]
+
+dummyPlugin :: SignupPlugin
+dummyPlugin = SignupPlugin
+  { spHTML     = do (Just d) <- currentDocument
+                    (n, update) <- dummyForm d
+                    -- appendChild parent n
+                    pure n
+  , spValidate = \rootElem ->
+      do me <- getElementByNameAttr rootElem "dp-somecheckbox"
+         case me of
+           Nothing ->
+             do debugStrLn "dummyPlugin: could not find element with name=dp-somecheckbox"
+                pure Nothing
+           (Just e) ->
+             do b <- getChecked e
+                pure $ Just  b
+
+  , spHandle   = \uid checked ->
+      do putStrLn $ "some dummy says that " ++ show uid ++ " has checked = " ++ show checked
+         pure ()
+  }
+
+
+signupPasswordForm :: [(Text, SignupPlugin)] -> JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
+signupPasswordForm sps =
   [domc|
       <d-if cond="isJust (_muser model)">
         <p>
@@ -188,12 +224,22 @@ signupPasswordForm =
           <label class="sr-only" for="su-password-confirm">{{ render PasswordConfirmationMsg }}</label>
           <input class="form-control" ng-model="signup.naPasswordConfirm" type="password" id="su-password-confirm" name="su-pass-confirm" value="" placeholder="{{render PasswordConfirmationMsg}}" />
          </div>
+         <div class="form-group ha-plugins">{{# mapM (spHTML . snd) sps }}</div>
          <div class="form-group">
           <input class="form-control" type="submit" value="{{render SignUpMsg}}" />
          </div>
         </form>
       </d-if>
         |]
+    where
+      pluginList :: JSDocument -> IO (JSNode,  SignupPlugin -> IO ())
+      pluginList d =
+        do (Just d) <- currentDocument
+           (Just n) <- createJSElement d "ha-plugin"
+           mapM_ (\(_, p) -> appendChild n =<< spHTML p) sps
+           putStrLn "pluginList"
+           pure (toJSNode n, \_ -> pure ())
+
 
 usernamePassword :: Bool -> JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
 usernamePassword inline =
@@ -382,9 +428,9 @@ extractJWT modelTV jr =
                                              mi <- getItem ls ("user" :: JSString)
                                              debugStrLn $ "getItem user = " ++ show (mi :: Maybe Text)
                                              -}
-                                             let userItem = UserItem { _authAdmin  = b
-                                                                     , Main._user  = u
-                                                                     , Main._token = tkn
+                                             let userItem = UserItem { _uiAuthAdmin  = b
+                                                                     , _uiUser  = u
+                                                                     , _uiToken = tkn
                                                                      }
                                              --                              setItem ls ("user" :: JSString) (lazyTextToJSString (Aeson.encodeToLazyText cl))
                                              setItem ls userKey (lazyTextToJSString (Aeson.encodeToLazyText userItem))
@@ -470,8 +516,8 @@ loginHandler routeFn inputUsername inputPassword update modelTV e =
          pure ()
        _ -> debugPrint (musername, mpassword)
 
-signupAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
-signupAjaxHandler modelTV xhr e =
+signupAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> [UserId -> IO ()] -> EventObject ReadyStateChange -> IO ()
+signupAjaxHandler modelTV xhr phHandlers e =
   ajaxHandler handler xhr e
   where
     handler jr =
@@ -484,10 +530,19 @@ signupAjaxHandler modelTV xhr e =
                       m & signupError .~ (Text.unpack err)
                     doRedraws modelTV
            Ok ->
-             do debugStrLn "signupAjaxHandler - cake"
+             do debugStrLn "signupAjaxHandler - Ok"
                 extractJWT modelTV jr
                 atomically $ modifyTVar' modelTV $ \m ->
                       m & signupError .~ ""
+                mu <- _muser <$> (atomically $ readTVar modelTV)
+                case mu of
+                  Nothing ->
+                    do debugStrLn "signupAjaxHandler - did not get a User even though we should have."
+                       pure ()
+                  (Just u) ->
+                    do mapM_ (\h -> h (_userId u)) phHandlers
+                       pure ()
+
          pure ()
 
 changePasswordAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
@@ -512,8 +567,8 @@ changePasswordAjaxHandler modelTV xhr e =
                 doRedraws modelTV
          pure ()
 
-signupHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
-signupHandler routeFn inputUsername inputEmail inputPassword inputPasswordConfirm modelTV e =
+signupHandler :: (AuthenticateURL -> Text) -> [(Text, SignupPlugin)] -> JSElement -> JSElement -> JSElement -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
+signupHandler routeFn sps rootNode inputUsername inputEmail inputPassword inputPasswordConfirm modelTV e =
   do preventDefault e
      stopPropagation e
      musername        <- getValue inputUsername
@@ -531,14 +586,33 @@ signupHandler routeFn inputUsername inputEmail inputPassword inputPasswordConfir
                                  , _naPassword        = textFromJSString password
                                  , _naPasswordConfirm = textFromJSString passwordConfirm
                                  }
-            xhr <- newXMLHttpRequest
-            open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (Account Nothing)))) True
-            addEventListener xhr (ev @ReadyStateChange) (signupAjaxHandler modelTV xhr) False
 
-            sendString xhr (JSString.pack (LBS.unpack (encode newAccountData)))
-            status <- getStatus xhr
-            debugPrint $ "signupHandler - status = " <> show status
-            pure ()
+            -- * validate plugins
+            mvs <- mapM (\(_, ps) ->
+                           case ps of
+                             (SignupPlugin _ v h) ->
+                               do r <- v rootNode
+                                  case r of
+                                    Nothing -> pure Nothing
+                                    (Just a) -> pure $ Just $ h a
+                             ) sps
+                  {-
+                          case (spValidate  ps) rootNode of
+                            Nothing -> pure Nothing) sps
+                  -}
+            case all isJust mvs of
+              False -> pure ()
+              True ->
+                do let vs = catMaybes mvs
+
+                   -- * POST results
+                   xhr <- newXMLHttpRequest
+                   open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (Account Nothing)))) True
+                   addEventListener xhr (ev @ReadyStateChange) (signupAjaxHandler modelTV xhr vs) False
+                   sendString xhr (JSString.pack (LBS.unpack (encode newAccountData)))
+                   status <- getStatus xhr
+                   debugPrint $ "signupHandler - status = " <> show status
+                   pure ()
        _ -> pure ()
 
 changePasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
@@ -703,8 +777,8 @@ setAuthenticateModel modelTV v =
     (Just ui) ->
       do debugStrLn $ "storageHandler - userItem = " ++ show (ui :: UserItem)
          atomically $ modifyTVar' modelTV $ \m ->
-             m & muser   .~ Just (Main._user ui)
-               & isAdmin .~ (_authAdmin ui)
+             m & muser   .~ Just (_uiUser ui)
+               & isAdmin .~ (_uiAuthAdmin ui)
          doRedraws modelTV
 
 clearUser :: TVar AuthenticateModel -> IO ()
@@ -721,8 +795,8 @@ clearUser modelTV =
      doRedraws modelTV
 
 -- FIXME: what happens if this is called twice?
-initHappstackAuthenticateClient :: Text -> IO ()
-initHappstackAuthenticateClient baseURL =
+initHappstackAuthenticateClient :: Text -> [(Text, SignupPlugin)] -> IO ()
+initHappstackAuthenticateClient baseURL sps =
   do debugStrLn "initHappstackAuthenticateClient"
      hSetBuffering stdout LineBuffering
      (Just d) <- currentDocument
@@ -742,9 +816,6 @@ initHappstackAuthenticateClient baseURL =
 
 
      -- add login form handlers
-     let getElementByNameAttr :: JSElement -> JSString -> IO (Maybe JSElement)
-         getElementByNameAttr node name =
-           querySelector node ("[name='" <> name <> "']")
      let attachLogin inline oldNode =
                     do (newNode, update) <- usernamePassword inline d
                        let (Just newElement) = fromJSNode @JSElement newNode
@@ -788,7 +859,7 @@ initHappstackAuthenticateClient baseURL =
               pure []
          (Just upSignupPasswords) ->
            do let attachSignupPassword oldNode =
-                    do (newNode, update) <- signupPasswordForm d
+                    do (newNode, update) <- signupPasswordForm sps d
                        (Just p) <- parentNode oldNode
                        replaceChild p newNode oldNode
                        (Just inputUsername)        <- getElementById  d "su-username"
@@ -799,7 +870,8 @@ initHappstackAuthenticateClient baseURL =
 --                     (Just inputUsername) <- getElementById  d "username"
 --                     (Just inputPassword) <- getElementById  d "password"
                        update =<< (atomically $ readTVar modelTV)
-                       addEventListener newNode (ev @Submit) (signupHandler (\url -> baseURL <> toPathInfo url) inputUsername inputEmail inputPassword inputPasswordConfirm modelTV) False
+                       let (Just newElem) = fromJSNode @JSElement newNode
+                       addEventListener newNode (ev @Submit) (signupHandler (\url -> baseURL <> toPathInfo url) sps newElem inputUsername inputEmail inputPassword inputPasswordConfirm modelTV) False
                        addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                        pure update
 --                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
@@ -964,12 +1036,84 @@ mapNodes f nodeList =
 
 
 foreign import javascript unsafe "initHappstackAuthenticateClient = $1"
-  set_initHappstackAuthenticateClient :: Callback (JSVal -> IO ()) -> IO ()
+  set_initHappstackAuthenticateClient :: JSVal -> IO ()
+{-
+foreign import javascript unsafe "happstackAuthenticateClientPlugins = $1"
+  js_setHappstackAuthenticateClientPlugins :: JSVal -> IO ()
+
+setHappstackAuthenticateClientPlugins :: TVar [(Text, SignupPlugin)] -> IO (Export (TVar [(Text, SignupPlugin)]))
+setHappstackAuthenticateClientPlugins tvar =
+  do e <- export tvar
+     js_setHappstackAuthenticateClientPlugins (jsval e)
+     pure e
+
+-- FIXME: this should be Nullable, but it seems to throw a runtime error. So
+-- I guess I am not using Nullable correctly
+foreign import javascript unsafe "$r = happstackAuthenticateClientPlugins"
+  js_getHappstackAuthenticateClientPlugins :: IO (Nullable JSVal)
+
+getHappstackAuthenticateClientPlugins :: IO (Maybe (TVar [(Text, SignupPlugin)]))
+getHappstackAuthenticateClientPlugins =
+  do nJsval <- js_getHappstackAuthenticateClientPlugins
+     case nullableToMaybe nJsval of
+       Nothing -> pure Nothing
+       (Just js) -> derefExport (unsafeCoerce js)
 
 
-main :: IO ()
-main =
-    do debugStrLn "getting script tag"
+appendHappstackAuthenticateClientPlugin :: (Text, SignupPlugin) -> IO (Either Text ())
+appendHappstackAuthenticateClientPlugin newPlugin =
+  do mhacp <-getHappstackAuthenticateClientPlugins
+     case mhacp of
+       Nothing -> pure $ Left "happstackAuthenticateClientPlugins"
+       (Just hacp) ->
+         do atomically $ modifyTVar' hacp $ \ps -> ps ++ [newPlugin]
+            pure $ Right ()
+-}
+
+foreign import javascript unsafe "happstackAuthenticateClientPlugins = $1"
+  js_setHappstackAuthenticateClientPlugins :: JSVal -> IO ()
+
+setHappstackAuthenticateClientPlugins :: [(Text, SignupPlugin)] -> IO (Export [(Text, SignupPlugin)])
+setHappstackAuthenticateClientPlugins sps =
+  do e <- export sps
+     js_setHappstackAuthenticateClientPlugins (jsval e)
+     pure e
+
+-- FIXME: this should be Nullable, but it seems to throw a runtime error. So
+-- I guess I am not using Nullable correctly
+foreign import javascript unsafe "$r = happstackAuthenticateClientPlugins"
+  js_getHappstackAuthenticateClientPlugins :: IO JSVal
+
+getHappstackAuthenticateClientPlugins :: IO (Maybe [(Text, SignupPlugin)])
+getHappstackAuthenticateClientPlugins =
+  do jsval <- js_getHappstackAuthenticateClientPlugins
+     derefExport (unsafeCoerce jsval)
+{-
+     case nullableToMaybe nJsval of
+       Nothing -> pure Nothing
+       (Just js) ->
+-}
+
+appendHappstackAuthenticateClientPlugin :: (Text, SignupPlugin) -> IO (Either Text ())
+appendHappstackAuthenticateClientPlugin newPlugin =
+  do mhacp <- getHappstackAuthenticateClientPlugins
+     case mhacp of
+       Nothing -> pure $ Left "happstackAuthenticateClientPlugins"
+       (Just sps) ->
+         do setHappstackAuthenticateClientPlugins $ sps ++ [newPlugin]
+            pure $ Right ()
+
+{-
+How could plugins register themselves at runtime?
+
+All code lives in a global name space.
+
+
+-}
+clientMain :: [(Text, SignupPlugin)] -> IO ()
+clientMain sps =
+    do hSetBuffering stdout LineBuffering
+       debugStrLn "getting script tag"
        (Just d) <- currentDocument
 --       mScript <- currentScript d
        mScript <- getElementById d "happstack-authenticate-script"
@@ -979,9 +1123,22 @@ main =
            do mUrl <- getData (toJSNode script) "baseUrl"
               debugStrLn $ "mUrl = " ++ show mUrl
               case mUrl of
-                Nothing -> debugStrLn "could not find base url"
+                Nothing    -> debugStrLn "could not find base url"
                 (Just url) ->
-                  initHappstackAuthenticateClient (textFromJSString url)
+                  do mapM_ (putStrLn . Text.unpack . fst) sps
+                     initHappstackAuthenticateClient (textFromJSString url) sps
+                  {-
+                  do -- sps <- newTVarIO  [("dummy", dummyPlugin)]
+                     -- setHappstackAuthenticateClientPlugins sps
+                     msps' <- getHappstackAuthenticateClientPlugins
+                     case msps' of
+                       Nothing -> putStrLn "Could not fetch Signup plugins"
+                       (Just sps') ->
+                         do putStrLn "Happstack Authenticate Signup Plugins"
+                            mapM_ (putStrLn . Text.unpack . fst) sps'-}
+
+--
+
 {-
        debugStrLn "setting initHappstackAuthenticateClient"
        callback <- syncCallback1 ContinueAsync $ \jv -> do
@@ -997,10 +1154,3 @@ main =
          return $ jsval o
        set_callback callback
 -}
--}
-
-main :: IO ()
-main =
-  do clientMain
-     threadDelay 1000000
-     putStrLn "HappstackAuthenticateClient exiting"

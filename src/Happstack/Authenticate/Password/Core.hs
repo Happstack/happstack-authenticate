@@ -59,18 +59,6 @@ unClaimsMap = id
 #endif
 
 ------------------------------------------------------------------------------
--- PasswordConfig
-------------------------------------------------------------------------------
-
-data PasswordConfig = PasswordConfig
-    { _resetLink :: Text
-    , _domain :: Text
-    , _passwordAcceptable :: Text -> Maybe Text
-    }
-    deriving (Typeable, Generic)
-makeLenses ''PasswordConfig
-
-------------------------------------------------------------------------------
 -- PasswordError
 ------------------------------------------------------------------------------
 
@@ -84,6 +72,7 @@ data PasswordError
   | MissingResetToken
   | InvalidResetToken
   | PasswordMismatch
+  | SendmailError
   | UnacceptablePassword { passwordErrorMessageMsg :: Text }
   | CoreError { passwordErrorMessageE :: CoreError }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
