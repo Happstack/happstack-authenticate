@@ -376,6 +376,7 @@ issueToken authenticateState authenticateConfig user =
 #endif
                            Map.fromList [ ("user"     , toJSON user)
                                         , ("authAdmin", toJSON admin)
+                                        , ("postLoginRedirectURL", toJSON (_postLoginRedirect authenticateConfig))
                                         ]
                    }
 #if MIN_VERSION_jwt(0,10,0)

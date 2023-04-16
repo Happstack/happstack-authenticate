@@ -57,7 +57,7 @@ import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..)
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
-import GHCJS.DOM.Location              (Location, getSearch)
+import GHCJS.DOM.Location              (Location, getSearch, setHref)
 import qualified GHCJS.DOM.URLSearchParams as Search
 import GHCJS.DOM.Window                (getLocalStorage, getLocation)
 import GHCJS.DOM.Storage               (Storage, getItem, removeItem, setItem)
@@ -120,6 +120,7 @@ data AuthenticateModel = AuthenticateModel
   , _passwordResetToken        :: Maybe Text
   , _muser                     :: Maybe User
   , _isAdmin                   :: Bool
+  , _postLoginRedirectURL      :: Maybe Text
   , _redraws                   :: [AuthenticateModel -> IO ()]
   }
 makeLenses ''AuthenticateModel
@@ -156,6 +157,7 @@ initAuthenticateModel = AuthenticateModel
  , _passwordResetToken        = Nothing
  , _muser                     = Nothing
  , _isAdmin                   = False
+ , _postLoginRedirectURL      = Nothing
  , _redraws                   = []
  }
 
@@ -394,6 +396,16 @@ urlBase64Decode bs = Base64.decode (addPadding (BS.map urlDecode  bs))
         3 -> bs <> "="
         _ -> error "Illegal base64url string!"
 
+postLoginRedirect :: TVar AuthenticateModel -> IO ()
+postLoginRedirect modelTV =
+  do m <- atomically $ readTVar modelTV
+     case _postLoginRedirectURL m of
+       Nothing -> pure ()
+       (Just url) -> do
+         (Just w) <- GHCJS.currentWindow
+         location <- getLocation w
+         setHref location url
+         pure ()
 
 extractJWT :: TVar AuthenticateModel -> JSONResponse -> IO ()
 extractJWT modelTV jr =
@@ -419,7 +431,7 @@ extractJWT modelTV jr =
                                     Nothing -> debugStrLn "authAdmin not found"
                                     (Just aa) ->
                                       case fromJSON aa of
-                                        (Error e) -> debugStrLn e
+                                        (Error e) -> debugStrLn $ "fromJSON aa - " ++ e
                                         (Success b) ->
                                           do debugPrint (u :: User, b :: Bool)
                                              (Just w) <- GHCJS.currentWindow
@@ -438,6 +450,16 @@ extractJWT modelTV jr =
                                                m & muser   .~ Just u
                                                  & isAdmin .~ b
                                              doRedraws modelTV
+                                             -- post login redirect
+                                             case Map.lookup "postLoginRedirectURL" cl of
+                                               Nothing -> pure ()
+                                               (Just plr) ->
+                                                 case fromJSON plr of
+                                                   (Error e) -> debugStrLn e
+                                                   (Success mu) ->
+                                                     do debugPrint $ "postLoginRedirectURL = " ++ show mu
+                                                        atomically $ modifyTVar' modelTV $ \m ->
+                                                          m & postLoginRedirectURL .~ mu
                              (Error e) -> debugStrLn e
         _ -> debugPrint "Could not find a token that is a string"
     _ -> debugPrint "_jrData is not an object"
@@ -505,7 +527,7 @@ loginHandler routeFn inputUsername inputPassword update modelTV e =
      (Just d) <- currentDocument
      xhr <- newXMLHttpRequest
      open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments Token))) True
-     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler (extractJWT modelTV) xhr) False
+     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler (\jr -> extractJWT modelTV jr >> postLoginRedirect modelTV) xhr) False
      musername <- getValue inputUsername
      mpassword <- getValue inputPassword
      case (musername, mpassword) of
@@ -814,6 +836,19 @@ initHappstackAuthenticateClient baseURL sps =
        (Just v) -> do --FIXME: check that atc exists an has same token value
                       setAuthenticateModel modelTV v
 
+     -- up-force-logout
+     mForceLogouts <- getElementsByTagName d "up-force-logout"
+     case mForceLogouts of
+       Nothing ->
+         do debugStrLn "did not find up-force-logout"
+            pure ()
+       (Just nodeList) ->
+         do len <- nodeListLength nodeList
+            if len <= 0
+              then debugStrLn "did not actually find up-force-logout"
+              else do
+                debugStrLn "up-force-logout"
+                clearUser modelTV
 
      -- add login form handlers
      let attachLogin inline oldNode =
