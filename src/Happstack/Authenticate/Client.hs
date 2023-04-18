@@ -78,7 +78,7 @@ import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
 debugPrint :: Show a => a -> IO ()
 
-#if DEBUG
+#ifdef DEBUG
 debugStrLn = putStrLn
 debugPrint = print
 #else
@@ -117,7 +117,7 @@ data AuthenticateModel = AuthenticateModel
   { _usernamePasswordError     :: String
   , _signupError               :: String
   , _changePasswordError       :: String
-  , _requestResetPasswordMsg :: String
+  , _requestResetPasswordMsg   :: String
   , _resetPasswordMsg          :: String
   , _passwordChanged           :: Bool
   , _passwordResetRequested    :: Bool
@@ -244,7 +244,7 @@ signupPasswordForm sps =
         do (Just d) <- currentDocument
            (Just n) <- createJSElement d "ha-plugin"
            mapM_ (\(_, p) -> appendChild n =<< spHTML p) sps
-           putStrLn "pluginList"
+           debugStrLn "pluginList"
            pure (toJSNode n, \_ -> pure ())
 
 
@@ -257,7 +257,7 @@ usernamePassword inline =
            </div>
           </p>
           <form role="form" expr='{{if inline then [Attr "class" "navbar-form navbar-left"] else []}}'>
-           <div class="form-group">{{ _usernamePasswordError model }}</div>
+           <div class="form-group error">{{ _usernamePasswordError model }}</div>
            <div class="form-group">
              <label class="sr-only" for="username">{{ render UsernameMsg }}</label>
              <input class="form-control" type="text" name="username" placeholder="{{render UsernameMsg}}" />
@@ -279,7 +279,7 @@ changePasswordForm =
       <d-if cond="(_passwordChanged model)">
        <p>{{ render PasswordChangedMsg }}</p>
        <form role="form">
-        <div class="form-group">{{_changePasswordError model}}</div>
+        <div class="form-group error">{{_changePasswordError model}}</div>
         <div class="form-group">
          <label class="sr-only" for="password">{{ render OldPasswordMsg }}</label>
          <input class="form-control" type="password" id="cp-old-password" name="old-pass" placeholder="{{render OldPasswordMsg }}" />
@@ -768,7 +768,7 @@ resetPasswordHandler routeFn inputNewPassword inputNewPasswordConfirm modelTV e 
 --     debugStrLn $ "search = " ++ show search
      mresetToken <- Search.get search ("reset_token" :: JSString)
 
-     -- debugStrLn $ "resetPasswordHandler - " ++ show (mnewPassword, mnewPasswordConfirm)
+     debugStrLn $ "resetPasswordHandler - " ++ show (mresetToken, mnewPassword, mnewPasswordConfirm)
      case (mresetToken, mnewPassword, mnewPasswordConfirm) of
        (Just resetToken, Just newPassword, Just newPasswordConfirm) ->
          do let resetPasswordData =
@@ -1175,7 +1175,7 @@ clientMain sps =
               case mUrl of
                 Nothing    -> debugStrLn "could not find base url"
                 (Just url) ->
-                  do mapM_ (putStrLn . Text.unpack . fst) sps
+                  do mapM_ (debugStrLn . Text.unpack . fst) sps
                      initHappstackAuthenticateClient (textFromJSString url) sps
                   {-
                   do -- sps <- newTVarIO  [("dummy", dummyPlugin)]

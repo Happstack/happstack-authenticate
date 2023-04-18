@@ -318,7 +318,7 @@ issueResetToken authenticateState user =
                         { JWT.iss = Nothing
                         , JWT.sub = Nothing
                         , JWT.aud = Nothing
-                        , JWT.exp = numericDate $ now + 60
+                        , JWT.exp = numericDate $ now + (60*10)
                         , JWT.nbf = Nothing
                         , JWT.iat = Nothing
                         , JWT.jti = Nothing
@@ -345,7 +345,8 @@ sendResetEmail :: (MonadIO m) =>
                -> Text
                -> m (Maybe PasswordError)
 sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) mReplyTo resetLink = liftIO $
- ((do let mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" (LT.fromStrict resetLink)
+ ((do let bdy = "Use the following link to reset your password: \n\n" <> (LT.fromStrict resetLink) <> "\n\nThis link is only good for 10 minutes. If you did not request a password reset, you can ignore this message."
+          mail = addReplyTo mReplyTo $ simpleMail' (Address Nothing toEm)  (Address fromNm fromEm) "Reset Password Request" bdy
       case mSendmailPath of
         Nothing -> do -- print mail
                       renderSendMail mail
@@ -382,6 +383,7 @@ passwordReset authenticateState passwordState passwordConfig =
                        (Just e) -> ok $ Left $ UnacceptablePassword e
                        Nothing -> do pw <-  mkHashedPass password
                                      update' passwordState (SetPassword (user ^. userId) pw)
+                                     -- FIXME: how can we immediately expire the reset token?
                                      ok $ Right "Password Reset." -- I18N
          {-
          do mTokenTxt <- optional $ queryString $ lookText' "reset_btoken"
