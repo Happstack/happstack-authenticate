@@ -14,7 +14,7 @@ import Happstack.Authenticate.Handlers hiding (Token)
 import Happstack.Authenticate.Password.Core
 import Happstack.Authenticate.Password.Handlers
 import Happstack.Authenticate.Password.URL (PasswordURL(..), passwordAuthenticationMethod)
-import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
+import Happstack.Server      (Happstack, Response, ServerPartT, acceptLanguage, bestLanguage, internalServerError, lookTexts', mapServerPartT, ok, notFound, queryString, toResponse)
 import Happstack.Server.JMacro ()
 import HSP                   (unXMLGenT)
 import HSP.HTML4             (html4StrictFrag)

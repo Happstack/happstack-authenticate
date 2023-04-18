@@ -76,10 +76,15 @@ import Web.JWT                         (secret)
 #endif
 import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
-debugStrLn = putStrLn
-
 debugPrint :: Show a => a -> IO ()
+
+#if DEBUG
+debugStrLn = putStrLn
 debugPrint = print
+#else
+debugStrLn _ = pure ()
+debugPrint _ = pure ()
+#endif
 
 getElementByNameAttr :: JSElement -> JSString -> IO (Maybe JSElement)
 getElementByNameAttr node name =
@@ -209,7 +214,7 @@ signupPasswordForm sps =
           <span>You are currently logged in as </span><span>{{ maybe "Unknown" (Text.unpack . _unUsername . _username) (_muser model) }}</span><span>. To create a new account you must first </span><a data-ha-action="logout" href="#">{{ render LogoutMsg }}</a>
         </p>
         <form role="form">
-         <div>{{_signupError model}}</div>
+         <div class="form-group error">{{_signupError model}}</div>
          <div class="form-group">
           <label class="sr-only" for="su-username">{{ render UsernameMsg }}</label>
           <input class="form-control" ng-model="signup.naUser.username" type="text" id="su-username" name="su-username" value="" placeholder="{{render UsernameMsg}}" />
@@ -469,12 +474,20 @@ extractJWT modelTV jr =
                                           debugPrint (map (urlBase64Decode . Text.encodeUtf8) claims)
 -}
 
-ajaxHandler :: (JSONResponse -> IO ()) -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
-ajaxHandler handler xhr ev =
+ajaxHandler :: TVar AuthenticateModel -> (JSONResponse -> IO ()) -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
+ajaxHandler modelTV handler xhr ev =
   do debugStrLn "ajaxHandler - readystatechange"
      status <- getStatus xhr
      rs      <- getReadyState xhr
+     debugStrLn $ "ajaxHandler - status = " ++ show status
+     debugStrLn $ "ajaxHandler - rs = " ++ show rs
      case rs of
+       4 | status == 500 ->
+             do debugStrLn $ "ajaxHandler - some sort of internal error."
+                atomically $ modifyTVar' modelTV $ \m ->
+                  m & signupError .~ "Something is wrong on our end and we can not create new accounts right now."
+                doRedraws modelTV
+
        4  -> {- - | status `elem` [200, 201] -}
              do txt <- getResponseText xhr
                 debugPrint $ "ajaxHandler - status = " <> show (status, txt)
@@ -527,7 +540,7 @@ loginHandler routeFn inputUsername inputPassword update modelTV e =
      (Just d) <- currentDocument
      xhr <- newXMLHttpRequest
      open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments Token))) True
-     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler (\jr -> extractJWT modelTV jr >> postLoginRedirect modelTV) xhr) False
+     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler modelTV (\jr -> extractJWT modelTV jr >> postLoginRedirect modelTV) xhr) False
      musername <- getValue inputUsername
      mpassword <- getValue inputPassword
      case (musername, mpassword) of
@@ -540,7 +553,7 @@ loginHandler routeFn inputUsername inputPassword update modelTV e =
 
 signupAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> [UserId -> IO ()] -> EventObject ReadyStateChange -> IO ()
 signupAjaxHandler modelTV xhr phHandlers e =
-  ajaxHandler handler xhr e
+  ajaxHandler modelTV handler xhr e
   where
     handler jr =
       do debugStrLn $ "signupAjaxHandler - " ++ show jr
@@ -569,7 +582,7 @@ signupAjaxHandler modelTV xhr phHandlers e =
 
 changePasswordAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
 changePasswordAjaxHandler modelTV xhr e =
-  ajaxHandler handler xhr e
+  ajaxHandler modelTV handler xhr e
   where
     handler jr =
       do debugStrLn $ "changePasswordAjaxHandler - " ++ show jr
@@ -671,7 +684,7 @@ changePasswordHandler routeFn inputOldPassword inputNewPassword inputNewPassword
 
 requestResetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
 requestResetAjaxHandler modelTV xhr e =
-  ajaxHandler handler xhr e
+  ajaxHandler modelTV handler xhr e
   where
     handler jr =
       do -- debugStrLn $ "requestResetPasswordAjaxHandler - " ++ show jr
@@ -716,7 +729,7 @@ requestResetPasswordHandler routeFn resetUsername modelTV e =
 
 resetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
 resetAjaxHandler modelTV xhr e =
-  ajaxHandler handler xhr e
+  ajaxHandler modelTV handler xhr e
   where
     handler jr =
       do debugStrLn $ "resetAjaxHandler - " ++ show jr
@@ -751,6 +764,8 @@ resetPasswordHandler routeFn inputNewPassword inputNewPasswordConfirm modelTV e 
      location    <- getLocation w
      searchString      <- getSearch location
      search <- Search.newURLSearchParams (searchString :: JSString)
+     debugStrLn $ "searchString = " ++ show searchString
+--     debugStrLn $ "search = " ++ show search
      mresetToken <- Search.get search ("reset_token" :: JSString)
 
      -- debugStrLn $ "resetPasswordHandler - " ++ show (mnewPassword, mnewPasswordConfirm)
@@ -770,7 +785,7 @@ resetPasswordHandler routeFn inputNewPassword inputNewPasswordConfirm modelTV e 
        _ ->
          do atomically $ modifyTVar' modelTV $ \m -> m & resetPasswordMsg .~ "Unable to reset password."
             doRedraws modelTV
-            debugStrLn "Unable to reset password."
+            debugStrLn $ "Unable to reset password - " ++ show (mresetToken, mnewPassword, mnewPasswordConfirm)
             pure ()
 
 
