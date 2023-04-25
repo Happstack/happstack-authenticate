@@ -37,7 +37,7 @@ import Data.Data                       (Data, Typeable)
 import qualified Data.JSString as JSString
 import Data.JSString (JSString, unpack, pack)
 import Data.JSString.Text (textToJSString, lazyTextToJSString, textFromJSString)
-import Data.Maybe (catMaybes, fromJust, isJust)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -78,6 +78,7 @@ import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
 debugPrint :: Show a => a -> IO ()
 
+#define DEBUG
 #ifdef DEBUG
 debugStrLn = putStrLn
 debugPrint = print
@@ -126,6 +127,7 @@ data AuthenticateModel = AuthenticateModel
   , _muser                     :: Maybe User
   , _isAdmin                   :: Bool
   , _postLoginRedirectURL      :: Maybe Text
+  , _postSignupRedirectURL     :: Maybe Text
   , _redraws                   :: [AuthenticateModel -> IO ()]
   }
 makeLenses ''AuthenticateModel
@@ -163,6 +165,7 @@ initAuthenticateModel = AuthenticateModel
  , _muser                     = Nothing
  , _isAdmin                   = False
  , _postLoginRedirectURL      = Nothing
+ , _postSignupRedirectURL     = Nothing
  , _redraws                   = []
  }
 
@@ -251,11 +254,16 @@ signupPasswordForm sps =
 usernamePassword :: Bool -> JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
 usernamePassword inline =
   [domc|<d-if cond="isJust (_muser model)">
-          <p>
-           <div class="form-group">
-             <a data-ha-action="logout" href="#">{{ (render LogoutMsg) ++ " " ++ ( maybe "" (Text.unpack . _unUsername . _username) (_muser model)) }}</a>
-           </div>
-          </p>
+          <div>
+           <p>
+             <span>You are logged in as </span><span>{{ maybe "" (Text.unpack . _unUsername . _username) (_muser model) }}</span><span>. If you wish to login as a different user you must first </span><a data-ha-action="logout" href="#">{{ (render LogoutMsg) }}</a><span>. </span>
+           </p>
+           <d-if cond="isJust (_postLoginRedirectURL model)">
+            <p><span>Otherwise you can <a href='{{Text.unpack $ fromMaybe "" (_postLoginRedirectURL model)}}'>click here</a> to continue to your account.</span></p>
+            <span></span>
+           </d-if>
+          </div>
+
           <form role="form" expr='{{if inline then [Attr "class" "navbar-form navbar-left"] else []}}'>
            <div class="form-group error">{{ _usernamePasswordError model }}</div>
            <div class="form-group">
@@ -412,62 +420,104 @@ postLoginRedirect modelTV =
          setHref location url
          pure ()
 
+postSignupRedirect :: TVar AuthenticateModel -> IO ()
+postSignupRedirect modelTV =
+  do m <- atomically $ readTVar modelTV
+     case _postSignupRedirectURL m of
+       Nothing ->
+         do debugStrLn "postSignupRedirect - no redirect url found"
+            pure ()
+       (Just url) -> do
+         debugStrLn $ "postSignupRedirect - redirecting to " <> Text.unpack url
+         (Just w) <- GHCJS.currentWindow
+         location <- getLocation w
+         setHref location url
+         pure ()
+
 extractJWT :: TVar AuthenticateModel -> JSONResponse -> IO ()
 extractJWT modelTV jr =
-  case (_jrData jr) of
-    (Object object) ->
-      case KM.lookup ("token" :: Text) object of
-        (Just (String tkn)) ->
-          do debugStrLn $ "tkn = " ++ show tkn
-             let mJwt = JWT.decode tkn
-             debugStrLn $ "jwt = " ++ show mJwt
-             case mJwt of
-               Nothing -> debugStrLn "Failed to decode"
-               (Just jwt) ->
-                 do let cl = unClaimsMap (unregisteredClaims (JWT.claims jwt))
-                    debugStrLn $ "unregistered claims = "++ show cl
-                    case Map.lookup "user" cl of
-                      Nothing -> debugStrLn "User not found"
-                      (Just object) ->
-                        do debugPrint object
-                           case fromJSON object of
-                             (Success u) ->
-                               do case Map.lookup "authAdmin" cl of
-                                    Nothing -> debugStrLn "authAdmin not found"
-                                    (Just aa) ->
-                                      case fromJSON aa of
-                                        (Error e) -> debugStrLn $ "fromJSON aa - " ++ e
-                                        (Success b) ->
-                                          do debugPrint (u :: User, b :: Bool)
-                                             (Just w) <- GHCJS.currentWindow
-                                             ls <- getLocalStorage w
+  case _jrStatus jr of
+    NotOk ->
+      case _jrData jr of
+        (String err) ->
+          do atomically $ modifyTVar' modelTV $ \m ->
+                      m & usernamePasswordError .~ (Text.unpack err)
+             doRedraws modelTV
+        _ ->
+          do atomically $ modifyTVar' modelTV $ \m ->
+                      m & usernamePasswordError .~ "An unexpected error occurred. Please contact technical support."
+             doRedraws modelTV
+    Ok ->
+      case (_jrData jr) of
+        (Object object) ->
+          case KM.lookup ("token" :: Text) object of
+            (Just (String tkn)) ->
+              do debugStrLn $ "tkn = " ++ show tkn
+                 let mJwt = JWT.decode tkn
+                 debugStrLn $ "jwt = " ++ show mJwt
+                 case mJwt of
+                   Nothing -> debugStrLn "Failed to decode"
+                   (Just jwt) ->
+                     do let cl = unClaimsMap (unregisteredClaims (JWT.claims jwt))
+                        debugStrLn $ "unregistered claims = "++ show cl
+                        case Map.lookup "user" cl of
+                          Nothing -> debugStrLn "User not found"
+                          (Just object) ->
+                            do debugPrint object
+                               case fromJSON object of
+                                 (Success u) ->
+                                   do case Map.lookup "authAdmin" cl of
+                                        Nothing -> debugStrLn "authAdmin not found"
+                                        (Just aa) ->
+                                          case fromJSON aa of
+                                            (Error e) -> debugStrLn $ "fromJSON aa - " ++ e
+                                            (Success b) ->
+                                              do debugPrint (u :: User, b :: Bool)
+                                                 (Just w) <- GHCJS.currentWindow
+                                                 ls <- getLocalStorage w
                                              {-
                                              mi <- getItem ls ("user" :: JSString)
                                              debugStrLn $ "getItem user = " ++ show (mi :: Maybe Text)
                                              -}
-                                             let userItem = UserItem { _uiAuthAdmin  = b
-                                                                     , _uiUser  = u
-                                                                     , _uiToken = tkn
-                                                                     }
+                                                 let userItem = UserItem { _uiAuthAdmin  = b
+                                                                         , _uiUser  = u
+                                                                         , _uiToken = tkn
+                                                                         }
                                              --                              setItem ls ("user" :: JSString) (lazyTextToJSString (Aeson.encodeToLazyText cl))
-                                             setItem ls userKey (lazyTextToJSString (Aeson.encodeToLazyText userItem))
-                                             atomically $ modifyTVar' modelTV $ \m ->
-                                               m & muser   .~ Just u
-                                                 & isAdmin .~ b
-                                             doRedraws modelTV
-                                             -- post login redirect
-                                             case Map.lookup "postLoginRedirectURL" cl of
-                                               Nothing -> pure ()
-                                               (Just plr) ->
-                                                 case fromJSON plr of
-                                                   (Error e) -> debugStrLn e
-                                                   (Success mu) ->
-                                                     do debugPrint $ "postLoginRedirectURL = " ++ show mu
-                                                        atomically $ modifyTVar' modelTV $ \m ->
-                                                          m & postLoginRedirectURL .~ mu
-                             (Error e) -> debugStrLn e
+                                                 setItem ls userKey (lazyTextToJSString (Aeson.encodeToLazyText userItem))
+                                                 atomically $ modifyTVar' modelTV $ \m ->
+                                                   m & muser   .~ Just u
+                                                     & isAdmin .~ b
+                                                 doRedraws modelTV
+
+                                                 -- post login redirect
+                                                 case Map.lookup "postLoginRedirectURL" cl of
+                                                   Nothing ->
+                                                     do debugStrLn $ "extractJWT: did not find postLoginRedirectURL"
+                                                        pure ()
+                                                   (Just plr) ->
+                                                     case fromJSON plr of
+                                                       (Error e) -> debugStrLn e
+                                                       (Success mu) ->
+                                                         do debugPrint $ "postLoginRedirectURL = " ++ show mu
+                                                            atomically $ modifyTVar' modelTV $ \m ->
+                                                              m & postLoginRedirectURL .~ mu
+
+                                                 -- post signup redirect
+                                                 case Map.lookup "postSignupRedirectURL" cl of
+                                                   Nothing ->
+                                                     do debugStrLn $ "extractJWT: did not find postSignupRedirectURL"
+                                                        pure ()
+                                                   (Just psr) ->
+                                                     case fromJSON psr of
+                                                       (Error e) -> debugStrLn e
+                                                       (Success mu) ->
+                                                         do debugPrint $ "postSignupRedirectURL = " ++ show mu
+                                                            atomically $ modifyTVar' modelTV $ \m ->
+                                                              m & postSignupRedirectURL .~ mu
+                                 (Error e) -> debugStrLn e
         _ -> debugPrint "Could not find a token that is a string"
-    _ -> debugPrint "_jrData is not an object"
+
 {-
                                           let claims = Text.splitOn "." tkn
                                           debugPrint claims
@@ -576,6 +626,7 @@ signupAjaxHandler modelTV xhr phHandlers e =
                        pure ()
                   (Just u) ->
                     do mapM_ (\h -> h (_userId u)) phHandlers
+                       postSignupRedirect modelTV
                        pure ()
 
          pure ()

@@ -136,7 +136,7 @@ token authenticateState authenticateConfig passwordState =
        (Just (UserPass username password)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
             case mUser of
-              Nothing -> forbidden $ toJSONError InvalidPassword
+              Nothing -> forbidden $ toJSONError InvalidUsername
               (Just u) ->
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
@@ -373,10 +373,10 @@ passwordReset authenticateState passwordState passwordConfig =
      case Aeson.decode body of
        Nothing -> badRequest $ Left $ CoreError JSONDecodeFailed
        (Just (ResetPasswordData password passwordConfirm resetToken)) ->
-         do mUser <- decodeAndVerifyResetToken authenticateState resetToken
-            case mUser of
-              Nothing     -> return (Left InvalidResetToken)
-              (Just (user, _)) ->
+         do eUser <- decodeAndVerifyResetToken authenticateState resetToken
+            case eUser of
+              (Left e)          -> pure (Left e)
+              (Right (user, _)) ->
                 if password /= passwordConfirm
                 then return (Left PasswordMismatch)
                 else case (passwordConfig ^. passwordAcceptable) password of
@@ -413,21 +413,21 @@ passwordReset authenticateState passwordState passwordConfig =
 decodeAndVerifyResetToken :: (MonadIO m) =>
                              AcidState AuthenticateState
                           -> Text
-                          -> m (Maybe (User, JWT VerifiedJWT))
+                          -> m (Either PasswordError (User, JWT VerifiedJWT))
 decodeAndVerifyResetToken authenticateState token =
   do let mUnverified = JWT.decode token
      case mUnverified of
-       Nothing -> return Nothing
+       Nothing -> pure $ Left InvalidResetToken
        (Just unverified) ->
          case Map.lookup "reset-password" (unClaimsMap (unregisteredClaims (claims unverified))) of
-           Nothing -> return Nothing
+           Nothing -> pure $ Left InvalidResetToken
            (Just uv) ->
              case fromJSON uv of
-               (Error _) -> return Nothing
+               (Error _) -> pure $ Left InvalidResetToken
                (Success u) ->
                  do mssecret <- query' authenticateState (GetSharedSecret (u ^. userId))
                     case mssecret of
-                      Nothing -> return Nothing
+                      Nothing -> pure $ Left PasswordInternalError
                       (Just ssecret) ->
 #if MIN_VERSION_jwt(0,11,0)
                         case verify (JWT.toVerify $ hmacSecret (_unSharedSecret ssecret)) unverified of
@@ -436,15 +436,15 @@ decodeAndVerifyResetToken authenticateState token =
 #else
                         case verify (secret (_unSharedSecret ssecret)) unverified of
 #endif
-                          Nothing -> return Nothing
+                          Nothing -> pure $ Left InvalidResetToken
                           (Just verified) ->
                             do now <- liftIO getPOSIXTime
                                case JWT.exp (claims verified) of
-                                 Nothing -> return Nothing
+                                 Nothing -> pure $ Left InvalidResetToken
                                  (Just exp') ->
                                    if (now > secondsSinceEpoch exp')
-                                   then return Nothing
-                                   else return (Just (u, verified))
+                                   then pure $ Left ExpiredResetToken
+                                   else pure $ Right (u, verified)
 
 
 

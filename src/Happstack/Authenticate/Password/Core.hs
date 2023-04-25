@@ -71,6 +71,8 @@ data PasswordError
   | NoEmailAddress
   | MissingResetToken
   | InvalidResetToken
+  | ExpiredResetToken
+  | PasswordInternalError
   | PasswordMismatch
   | SendmailError
   | UnacceptablePassword { passwordErrorMessageMsg :: Text }

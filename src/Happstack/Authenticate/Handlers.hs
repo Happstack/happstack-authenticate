@@ -63,6 +63,7 @@ data AuthenticateConfig = AuthenticateConfig
     , _systemReplyToAddress :: Maybe SimpleAddress         -- ^ Reply-To: line for emails sent by the server
     , _systemSendmailPath   :: Maybe FilePath              -- ^ path to sendmail if it is not \/usr\/sbin\/sendmail
     , _postLoginRedirect    :: Maybe Text                  -- ^ path to redirect to after a successful login
+    , _postSignupRedirect   :: Maybe Text                  -- ^ path to redirect to after a successful account creation
     , _createUserCallback   :: Maybe (User -> IO ())       -- ^ a function to call when a new user is created. Useful for adding them to mailing lists or other stuff
     , _happstackAuthenticateClientPath :: Maybe FilePath
     }
@@ -374,17 +375,18 @@ issueToken authenticateState authenticateConfig user =
 #if MIN_VERSION_jwt(0,8,0)
                          ClaimsMap $
 #endif
-                           Map.fromList [ ("user"     , toJSON user)
-                                        , ("authAdmin", toJSON admin)
-                                        , ("postLoginRedirectURL", toJSON (_postLoginRedirect authenticateConfig))
+                           Map.fromList [ ("user"                 , toJSON user)
+                                        , ("authAdmin"            , toJSON admin)
+                                        , ("postLoginRedirectURL" , toJSON (_postLoginRedirect authenticateConfig))
+                                        , ("postSignupRedirectURL", toJSON (_postSignupRedirect authenticateConfig))
                                         ]
                    }
 #if MIN_VERSION_jwt(0,10,0)
-     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
+     pure $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) mempty claims
 #elif MIN_VERSION_jwt(0,9,0)
-     return $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
+     pure $ encodeSigned (hmacSecret $ _unSharedSecret ssecret) claims
 #else
-     return $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
+     pure $ encodeSigned HS256 (secret $ _unSharedSecret ssecret) claims
 #endif
 
 -- | decode and verify the `TokenText`. If successful, return the
