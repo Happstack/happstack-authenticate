@@ -325,7 +325,7 @@ main =
                , _passwordAcceptable = \t ->
                    if T.length t >= 5
                    then Nothing
-                   else Just "Must be at least 5 characters."
+                   else Just "Must be at least 8 characters."
                }
          in
            initAuthentication Nothing authenticateConfig

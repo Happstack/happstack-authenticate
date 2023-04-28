@@ -19,7 +19,7 @@ import Control.Concurrent.STM.TVar (TVar, newTVarIO, modifyTVar', readTVar, writ
 import Control.Concurrent.STM (atomically)
 import Control.Lens ((&), (.~))
 import Control.Lens.TH (makeLenses)
-import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, createJSElement, ev, getData, getLength, item, key, unJSNode, fromJSNode, getChecked, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setRequestHeader, setResponseType, setTextContent, stopPropagation, toJSNode, url, window)
+import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, createJSElement, ev, getData, getLength, item, key, unJSNode, fromJSNode, getChecked, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setProperty, setRequestHeader, setResponseType, setTextContent, stopPropagation, toJSNode, url, window)
 import qualified Chili.Types as Chili
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Text as Aeson
@@ -78,7 +78,6 @@ import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
 debugPrint :: Show a => a -> IO ()
 
-#define DEBUG
 #ifdef DEBUG
 debugStrLn = putStrLn
 debugPrint = print
@@ -323,7 +322,7 @@ requestResetPasswordForm =
            <input class="form-control" type="text" id="rrp-reset-username" name="username" placeholder="{{render UsernameMsg}}" />
           </div>
           <div class="form-group">
-           <input class="form-control" type="submit" value="{{render RequestPasswordResetMsg}}" />
+           <input class="form-control" type="submit" name="rrp-submit" value="{{render RequestPasswordResetMsg}}" />
           </div>
          </form>
        </d-if>
@@ -733,8 +732,8 @@ changePasswordHandler routeFn inputOldPassword inputNewPassword inputNewPassword
        _ -> pure ()
 
 
-requestResetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
-requestResetAjaxHandler modelTV xhr e =
+requestResetAjaxHandler :: TVar AuthenticateModel -> XMLHttpRequest -> JSElement -> EventObject ReadyStateChange -> IO ()
+requestResetAjaxHandler modelTV xhr rrpSubmit e =
   ajaxHandler modelTV handler xhr e
   where
     handler jr =
@@ -745,6 +744,7 @@ requestResetAjaxHandler modelTV xhr e =
                (String err) ->
                  do atomically $ modifyTVar' modelTV $ \m ->
                       m & requestResetPasswordMsg .~ (Text.unpack err)
+                    setProperty rrpSubmit "disabled" False
                     doRedraws modelTV
            Ok ->
              do -- debugStrLn "requestResetPasswordAjaxHandler - cake"
@@ -757,8 +757,8 @@ requestResetAjaxHandler modelTV xhr e =
 
          pure ()
 
-requestResetPasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
-requestResetPasswordHandler routeFn resetUsername modelTV e =
+requestResetPasswordHandler :: (AuthenticateURL -> Text) -> JSElement -> JSElement -> TVar AuthenticateModel -> EventObject Submit -> IO ()
+requestResetPasswordHandler routeFn resetUsername rrpSubmit modelTV e =
   do preventDefault e
      stopPropagation e
      mresetUsername       <- getValue resetUsername
@@ -766,12 +766,13 @@ requestResetPasswordHandler routeFn resetUsername modelTV e =
      debugStrLn $ "requestResetPasswordHandler - " ++ show (mresetUsername)
      case (mresetUsername) of
        (Just resetUsername) ->
-         do let requestResetPasswordData =
+         do setProperty rrpSubmit "disabled" True
+            let requestResetPasswordData =
                   RequestResetPasswordData { _rrpUsername    = Username $ textFromJSString resetUsername
                                            }
             xhr <- newXMLHttpRequest
             open xhr "POST" (routeFn (AuthenticationMethods $ Just (passwordAuthenticationMethod, toPathSegments (PasswordRequestReset)))) True
-            addEventListener xhr (ev @ReadyStateChange) (requestResetAjaxHandler modelTV xhr) False
+            addEventListener xhr (ev @ReadyStateChange) (requestResetAjaxHandler modelTV xhr rrpSubmit) False
 
             sendString xhr (JSString.pack (LBS.unpack (encode requestResetPasswordData)))
             pure ()
@@ -1000,11 +1001,12 @@ initHappstackAuthenticateClient baseURL sps =
 
                        -- FIXME: we techincally allow multiple change password fields on a single page, but then try to look them up via id which should be unique
                        (Just resetUsername)        <- getElementById  d "rrp-reset-username"
+                       (Just rrpSubmit)            <- getElementByNameAttr (fromJust $ fromJSNode @JSElement newNode) "rrp-submit"
 
 --                     (Just inputUsername) <- getElementById  d "username"
 --                     (Just inputPassword) <- getElementById  d "password"
                        update =<< (atomically $ readTVar modelTV)
-                       addEventListener newNode (ev @Submit) (requestResetPasswordHandler (\url -> baseURL <> toPathInfo url) resetUsername modelTV) False
+                       addEventListener newNode (ev @Submit) (requestResetPasswordHandler (\url -> baseURL <> toPathInfo url) resetUsername rrpSubmit modelTV) False
 --                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                        pure update
 --                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
