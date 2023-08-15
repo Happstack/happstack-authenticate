@@ -451,6 +451,17 @@ extractJWT modelTV jr =
         (Object object) ->
           case KM.lookup ("token" :: Text) object of
             (Just (String tkn)) ->
+              updateAuthenticateModelFromToken modelTV tkn
+        _ -> debugPrint "Could not find a token that is a string"
+
+{-
+                                          let claims = Text.splitOn "." tkn
+                                          debugPrint claims
+                                          debugPrint (map (urlBase64Decode . Text.encodeUtf8) claims)
+-}
+
+updateAuthenticateModelFromToken :: TVar AuthenticateModel -> Text -> IO ()
+updateAuthenticateModelFromToken modelTV tkn =
               do debugStrLn $ "tkn = " ++ show tkn
                  let mJwt = JWT.decode tkn
                  debugStrLn $ "jwt = " ++ show mJwt
@@ -487,7 +498,6 @@ extractJWT modelTV jr =
                                                  atomically $ modifyTVar' modelTV $ \m ->
                                                    m & muser   .~ Just u
                                                      & isAdmin .~ b
-                                                 doRedraws modelTV
 
                                                  -- post login redirect
                                                  case Map.lookup "postLoginRedirectURL" cl of
@@ -514,14 +524,11 @@ extractJWT modelTV jr =
                                                          do debugPrint $ "postSignupRedirectURL = " ++ show mu
                                                             atomically $ modifyTVar' modelTV $ \m ->
                                                               m & postSignupRedirectURL .~ mu
-                                 (Error e) -> debugStrLn e
-        _ -> debugPrint "Could not find a token that is a string"
 
-{-
-                                          let claims = Text.splitOn "." tkn
-                                          debugPrint claims
-                                          debugPrint (map (urlBase64Decode . Text.encodeUtf8) claims)
--}
+                                                 doRedraws modelTV
+
+                                 (Error e) -> debugStrLn e
+
 
 ajaxHandler :: TVar AuthenticateModel -> (JSONResponse -> IO ()) -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
 ajaxHandler modelTV handler xhr ev =
@@ -868,7 +875,7 @@ setAuthenticateModel modelTV v =
          atomically $ modifyTVar' modelTV $ \m ->
              m & muser   .~ Just (_uiUser ui)
                & isAdmin .~ (_uiAuthAdmin ui)
-         doRedraws modelTV
+         updateAuthenticateModelFromToken modelTV (_uiToken ui)
 
 clearUser :: TVar AuthenticateModel -> IO ()
 clearUser modelTV =
