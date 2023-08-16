@@ -345,6 +345,8 @@ data AuthenticateURL
     = -- Users (Maybe UserId)
       AuthenticationMethods (Maybe (AuthenticationMethod, [Text]))
     | HappstackAuthenticateClient
+    | Logout
+--    | AmAuthenticated
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 
 makeBoomerangs ''AuthenticateURL
@@ -355,6 +357,8 @@ authenticateURL =
   (  -- "users" </> (  rUsers . rMaybe userId )
     "authentication-methods" </> ( rAuthenticationMethods . rMaybe authenticationMethod)
   <> "happstack-authenticate-client" . rHappstackAuthenticateClient
+  <> "logout" . rLogout
+--   <> "am-authenticated" . rAmAuthenticated
   )
   where
     userId = rUserId . integer

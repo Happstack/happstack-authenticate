@@ -32,7 +32,7 @@ import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCur
 import Data.Time.Clock.POSIX           (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.UserId                     (UserId(..), rUserId, succUserId, unUserId)
 import Happstack.Authenticate.Core
-import Happstack.Server                (Cookie(secure), CookieLife(Session, MaxAge), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
+import Happstack.Server                (Cookie(httpOnly, sameSite, secure), CookieLife(Session, MaxAge), Happstack, SameSite(SameSiteStrict), ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
 import GHC.Generics                    (Generic)
 import Prelude                         hiding ((.), id, exp)
 import System.IO                       (IOMode(ReadMode), withFile)
@@ -457,7 +457,7 @@ addTokenCookie :: (Happstack m) =>
 addTokenCookie authenticateState authenticateConfig user =
   do token <- issueToken authenticateState authenticateConfig user
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
-     addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
+     addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { sameSite = SameSiteStrict, secure = s, httpOnly = True })
 --     addCookie (MaxAge 60) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
      return token
 

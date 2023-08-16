@@ -16,7 +16,7 @@ import Data.UserId (UserId)
 import HSP.JMacro (IntegerSupply(..))
 import Happstack.Authenticate.Core
 import Happstack.Authenticate.Handlers
-import Happstack.Server (internalServerError, notFound, ok, Response, ServerPartT, ToMessage(toResponse))
+import Happstack.Server (internalServerError, notFound, ok, method, Method(POST), Response, ServerPartT, ToMessage(toResponse))
 import Happstack.Server.FileServe (serveFile, asContentType)
 import Happstack.Server.JMacro ()
 import Language.Javascript.JMacro (JStat)
@@ -44,6 +44,10 @@ route authenticationHandlers authenticateConfigTV url =
             case _happstackAuthenticateClientPath ac of
               Nothing -> internalServerError $ toResponse "path to happstack-authenticate-client not configured"
               (Just p) -> serveFile (asContentType "text/javascript") p
+       Logout ->
+         do method [POST]
+            deleteTokenCookie
+            ok $ toResponse ()
 
 ------------------------------------------------------------------------------
 -- initAuthenticate

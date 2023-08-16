@@ -51,7 +51,7 @@ import GHCJS.Foreign.Export (Export, export, derefExport)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal, jsval)
-import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
+import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods, Logout), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
 import qualified Happstack.Authenticate.Core as Authenticate
 import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
@@ -569,7 +569,7 @@ logoutHandler routeFn update modelTV e =
                      "logout" ->
                        do debugStrLn $  "logoutHandler - logout"
                           (Just d) <- GHCJS.currentDocument
-                          clearUser modelTV
+                          clearUser routeFn modelTV
                      _ ->
                        do debugStrLn $ "unknown action - " ++ show action
        Nothing -> do debugStrLn "target is not an element"
@@ -877,8 +877,8 @@ setAuthenticateModel modelTV v =
                & isAdmin .~ (_uiAuthAdmin ui)
          updateAuthenticateModelFromToken modelTV (_uiToken ui)
 
-clearUser :: TVar AuthenticateModel -> IO ()
-clearUser modelTV =
+clearUser :: (AuthenticateURL -> Text) -> TVar AuthenticateModel -> IO ()
+clearUser routeFn modelTV =
   do atomically $ modifyTVar' modelTV $ \m ->
        m & usernamePasswordError .~ ""
          & muser                 .~ Nothing
@@ -887,7 +887,13 @@ clearUser modelTV =
      ls <- getLocalStorage w
      removeItem ls userKey
      (Just d) <- GHCJS.currentDocument
-     setCookie d ("atc=; path=/; expires=Thu, 01-Jan-70 00:00:01 GMT;" :: JSString)
+
+     -- We can't do this because the cookie must be httpOnly for security reasons
+     -- setCookie d ("atc=; path=/; expires=Thu, 01-Jan-70 00:00:01 GMT;" :: JSString)
+     -- So we have to make an API call so the server can set a new cookie
+     xhr <- newXMLHttpRequest
+     open xhr "POST" (routeFn Logout) True
+     send xhr
      doRedraws modelTV
 
 -- FIXME: what happens if this is called twice?
@@ -910,6 +916,8 @@ initHappstackAuthenticateClient baseURL sps =
        (Just v) -> do --FIXME: check that atc exists an has same token value
                       setAuthenticateModel modelTV v
 
+     let routeFn = (\url -> baseURL <> toPathInfo url)
+
      -- up-force-logout
      mForceLogouts <- getElementsByTagName d "up-force-logout"
      case mForceLogouts of
@@ -922,7 +930,7 @@ initHappstackAuthenticateClient baseURL sps =
               then debugStrLn "did not actually find up-force-logout"
               else do
                 debugStrLn "up-force-logout"
-                clearUser modelTV
+                clearUser routeFn modelTV
 
      -- add login form handlers
      let attachLogin inline oldNode =
@@ -933,8 +941,8 @@ initHappstackAuthenticateClient baseURL sps =
                        (Just inputUsername) <- getElementByNameAttr newElement "username"
                        (Just inputPassword) <- getElementByNameAttr newElement "password"
                        update =<< (atomically $ readTVar modelTV)
-                       addEventListener newNode (ev @Submit) (loginHandler (\url -> baseURL <> toPathInfo url) inputUsername inputPassword update modelTV) False
-                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+                       addEventListener newNode (ev @Submit) (loginHandler routeFn inputUsername inputPassword update modelTV) False
+                       addEventListener newNode (ev @Click) (logoutHandler routeFn update modelTV) False
                        pure update
      -- block login form
      mUpLogins <- getElementsByTagName d "up-login"
