@@ -30,10 +30,11 @@ import Web.Routes (RouteT)
 ------------------------------------------------------------------------------
 
 route :: AuthenticationHandlers
+      -> AcidState AuthenticateState
       -> TVar AuthenticateConfig
       -> AuthenticateURL
       -> RouteT AuthenticateURL (ServerPartT IO) Response
-route authenticationHandlers authenticateConfigTV url =
+route authenticationHandlers authenticateState authenticateConfigTV url =
   do case url of
        (AuthenticationMethods (Just (authenticationMethod, pathInfo))) ->
          case Map.lookup authenticationMethod authenticationHandlers of
@@ -48,6 +49,11 @@ route authenticationHandlers authenticateConfigTV url =
          do method [POST]
             deleteTokenCookie
             ok $ toResponse ()
+       AmAuthenticated ->
+         do amAuthenticated authenticateState
+       InitClient ->
+         do ac <- liftIO $ atomically $ readTVar authenticateConfigTV
+            clientInit ac authenticateState
 
 ------------------------------------------------------------------------------
 -- initAuthenticate
@@ -65,7 +71,7 @@ initAuthentication mBasePath authenticateConfig initMethods =
      -- FIXME: need to deal with one of the initMethods throwing an exception
      (cleanupPartial, handlers) <- unzip <$> mapM (\initMethod -> initMethod authenticatePath authenticateState authenticateConfigTV) initMethods
      let cleanup = sequence_ $ createCheckpointAndClose authenticateState : (map (\c -> c True) cleanupPartial)
-         h       = route (Map.fromList handlers) authenticateConfigTV
+         h       = route (Map.fromList handlers) authenticateState authenticateConfigTV
      return (cleanup, h, authenticateState, authenticateConfigTV)
 
 instance (Functor m, MonadIO m) => IntegerSupply (RouteT AuthenticateURL m) where

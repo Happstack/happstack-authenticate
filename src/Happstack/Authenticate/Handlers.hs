@@ -12,12 +12,16 @@ import Control.Monad.Reader            (ask)
 import Control.Monad.State             (get, put, modify)
 import Data.Acid                       (AcidState, Update, Query, makeAcidic)
 import Data.Acid.Advanced              (update', query')
-import Data.Aeson                      (FromJSON(..), ToJSON(..), Result(..), fromJSON)
+import Data.Aeson                      (FromJSON(..), Object(..), ToJSON(..), Result(..), Value(..), fromJSON)
 import qualified Data.Aeson            as A
 import Data.Aeson.Types                (Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap as KM
+#endif
 import Data.ByteString.Base64          (encode)
 import qualified Data.ByteString.Char8 as B
 import Data.Data                       (Data, Typeable)
+import qualified Data.HashMap.Strict as HashMap
 import Data.Map                        (Map)
 import qualified Data.Map              as Map
 import Data.SafeCopy                   (SafeCopy, Migrate(..), base, deriveSafeCopy, extension)
@@ -32,7 +36,7 @@ import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCur
 import Data.Time.Clock.POSIX           (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.UserId                     (UserId(..), rUserId, succUserId, unUserId)
 import Happstack.Authenticate.Core
-import Happstack.Server                (Cookie(httpOnly, sameSite, secure), CookieLife(Session, MaxAge), Happstack, SameSite(SameSiteStrict), ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
+import Happstack.Server                (Cookie(httpOnly, sameSite, secure), CookieLife(Session, MaxAge), Happstack, Method(GET, HEAD), SameSite(SameSiteStrict), ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, method, mkCookie, notFound, resp, toResponseBS)
 import GHC.Generics                    (Generic)
 import Prelude                         hiding ((.), id, exp)
 import System.IO                       (IOMode(ReadMode), withFile)
@@ -348,12 +352,11 @@ getOrGenSharedSecret authenticateState uid =
 -- Token Functions
 ------------------------------------------------------------------------------
 
--- | create a `Token` for `User`
+-- | create a `TokenText` for `User`
 --
--- The @isAuthAdmin@ paramater is a function which will be called to
--- determine if `UserId` is a user who should be given Administrator
--- privileges. This includes the ability to things such as set the
--- `OpenId` realm, change the registeration mode, etc.
+-- NOTE: the `TokenText` is all that is needed to impersonate a
+-- user. It should not be stored in `LocalStorage` or other places
+-- which are accessibly by 3rd party javascript
 issueToken :: (MonadIO m) =>
               AcidState AuthenticateState
            -> AuthenticateConfig
@@ -376,9 +379,6 @@ issueToken authenticateState authenticateConfig user =
                          ClaimsMap $
 #endif
                            Map.fromList [ ("user"                 , toJSON user)
-                                        , ("authAdmin"            , toJSON admin)
-                                        , ("postLoginRedirectURL" , toJSON (_postLoginRedirect authenticateConfig))
-                                        , ("postSignupRedirectURL", toJSON (_postSignupRedirect authenticateConfig))
                                         ]
                    }
 #if MIN_VERSION_jwt(0,10,0)
@@ -431,12 +431,7 @@ decodeAndVerifyToken authenticateState now token =
                               (Just exp') ->
                                 if (utcTimeToPOSIXSeconds now) > (secondsSinceEpoch exp')
                                 then return Nothing
-                                else case Map.lookup "authAdmin" (unClaimsMap (unregisteredClaims (claims verified))) of
-                                       Nothing -> return (Just (Token u False, verified))
-                                       (Just a) ->
-                                           case fromJSON a of
-                                             (Error _) -> return (Just (Token u False, verified))
-                                             (Success b) -> return (Just (Token u b, verified))
+                                else return (Just (Token u, verified))
 
 ------------------------------------------------------------------------------
 -- Token in a Cookie
@@ -453,13 +448,12 @@ addTokenCookie :: (Happstack m) =>
                   AcidState AuthenticateState
                -> AuthenticateConfig
                -> User
-               -> m TokenText
+               -> m ()
 addTokenCookie authenticateState authenticateConfig user =
   do token <- issueToken authenticateState authenticateConfig user
      s <- rqSecure <$> askRq -- FIXME: this isn't that accurate in the face of proxies
      addCookie (MaxAge (60*60*24*30)) ((mkCookie authCookieName (Text.unpack token)) { sameSite = SameSiteStrict, secure = s, httpOnly = True })
---     addCookie (MaxAge 60) ((mkCookie authCookieName (Text.unpack token)) { secure = s })
-     return token
+     return ()
 
 -- | delete the `Token` `Cookie`
 deleteTokenCookie  :: (Happstack m) =>
@@ -559,3 +553,41 @@ toJSONError e = toResponseBS "application/json" (A.encode (JSONResponse NotOk (A
 type AuthenticationHandler = [Text] -> RouteT AuthenticateURL (ServerPartT IO) Response
 
 type AuthenticationHandlers = Map AuthenticationMethod AuthenticationHandler
+
+
+------------------------------------------------------------------------------
+-- amAuthenticated
+------------------------------------------------------------------------------
+
+amAuthenticated :: (Happstack m) =>
+         AcidState AuthenticateState
+      -> m Response
+amAuthenticated authenticateState =
+  do method [GET, HEAD]
+     mt <- getTokenCookie authenticateState
+     case mt of
+       Nothing -> resp 401 $ toJSONError AuthorizationRequired
+       (Just (token, jwt)) ->
+#if MIN_VERSION_aeson(2,0,0)
+                             resp 200 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON token)])
+#else
+                             resp 200 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)])
+#endif
+
+
+clientInit :: (Happstack m) =>
+              AuthenticateConfig
+           -> AcidState AuthenticateState
+           -> m Response
+clientInit authenticateConfig authenticateState =
+  do method [GET, HEAD]
+     mt <- getTokenCookie authenticateState
+     let mUser =
+           case mt of
+             Nothing -> Nothing
+             Just ((Token user), _) -> Just user
+         cid = ClientInitData { _cidUser = mUser
+                              , _cidPostLoginRedirectURL  = _postLoginRedirect authenticateConfig
+                              , _cidPostSignupRedirectURL = _postSignupRedirect   authenticateConfig
+                              }
+     resp 200 $ toJSONSuccess (toJSON cid)

@@ -130,19 +130,10 @@ import Control.Category                ((.), id)
 import Control.Exception               (SomeException)
 import qualified Control.Exception     as E
 import Control.Lens                    ((?=), (.=), (^.), (.~), makeLenses, view, set)
--- import Control.Lens.At                 (IxValue(..), Ixed(..), Index(..), At(at))
--- import Control.Monad.Trans             (MonadIO(liftIO))
--- import Control.Monad.Reader            (ask)
--- import Control.Monad.State             (get, put, modify)
 import Data.Aeson                      (FromJSON(..), ToJSON(..), Result(..), fromJSON)
 import qualified Data.Aeson            as A
 import Data.Aeson.Types                (Options(fieldLabelModifier), defaultOptions, genericToJSON, genericParseJSON)
--- import Data.Acid                       (AcidState, Update, Query, makeAcidic)
--- import Data.Acid.Advanced              (update', query')
--- import Data.ByteString.Base64          (encode)
--- import qualified Data.ByteString.Char8 as B
 import Data.Data                       (Data, Typeable)
--- import Data.Default                    (def)
 import Data.Map                        (Map)
 import qualified Data.Map              as Map
 import Data.Maybe                      (fromMaybe, maybeToList)
@@ -150,41 +141,18 @@ import Data.Monoid                     ((<>), mconcat, mempty)
 import Data.SafeCopy                   (SafeCopy, Migrate(..), base, deriveSafeCopy, extension)
 import Data.IxSet.Typed
 import qualified Data.IxSet.Typed      as IxSet
--- import           Data.Set              (Set)
--- import qualified Data.Set              as Set
 import Data.Text                       (Text)
 import qualified Data.Text             as Text
 import qualified Data.Text.Encoding    as Text
--- import Data.Time                       (UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
--- import Data.Time.Clock.POSIX           (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.UserId                     (UserId(..), rUserId, succUserId, unUserId)
 import GHC.Generics                    (Generic)
--- import Happstack.Server                (Cookie(secure), CookieLife(Session, MaxAge), Happstack, ServerPartT, Request(rqSecure), Response, addCookie, askRq, expireCookie, getHeaderM, lookCookie, lookCookieValue, mkCookie, notFound, toResponseBS)
--- import Happstack.Server.Internal.Clock (getApproximateUTCTime)
--- import Language.Javascript.JMacro
 import Prelude                         hiding ((.), id, exp)
 import System.IO                       (IOMode(ReadMode), withFile)
--- import System.Random                   (randomRIO)
 import Text.Boomerang.TH               (makeBoomerangs)
 import Text.Shakespeare.I18N           (RenderMessage(renderMessage), mkMessageFor)
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
-import qualified Web.JWT               as JWT
-#if MIN_VERSION_jwt(0,8,0)
-import Web.JWT                         (ClaimsMap(..), hmacSecret)
-#else
-import Web.JWT                         (secret)
-#endif
-
 import Web.Routes                      (RouteT, PathInfo(..), nestURL)
 import Web.Routes.Boomerang
--- import Web.Routes.Happstack            ()
 import Web.Routes.TH                   (derivePathInfo)
-
-#if MIN_VERSION_jwt(0,8,0)
-#else
-unClaimsMap = id
-#endif
-
 
 -- | when creating JSON field names, drop the first character. Since
 -- we are using lens, the leading character should always be _.
@@ -214,38 +182,14 @@ data CoreError
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 instance ToJSON   CoreError where toJSON    = genericToJSON    jsonOptions
 instance FromJSON CoreError where parseJSON = genericParseJSON jsonOptions
-{-
-instance ToJExpr CoreError where
-    toJExpr = toJExpr . toJSON
--}
+
 deriveSafeCopy 0 'base ''CoreError
 
 mkMessageFor "HappstackAuthenticateI18N" "CoreError" "messages/core" ("en")
 
 ------------------------------------------------------------------------------
 
-------------------------------------------------------------------------------
--- UserId
-------------------------------------------------------------------------------
-{-
--- | a 'UserId' uniquely identifies a user.
-newtype UserId = UserId { _unUserId :: Integer }
-    deriving (Eq, Ord, Enum, Read, Show, Data, Typeable, Generic)
-deriveSafeCopy 1 'base ''UserId
-makeLenses ''UserId
-makeBoomerangs ''UserId
 
-instance ToJSON   UserId where toJSON (UserId i) = toJSON i
-instance FromJSON UserId where parseJSON v = UserId <$> parseJSON v
-
-instance PathInfo UserId where
-    toPathSegments (UserId i) = toPathSegments i
-    fromPathSegments = UserId <$> fromPathSegments
-
--- | get the next `UserId`
-succUserId :: UserId -> UserId
-succUserId (UserId i) = UserId (succ i)
--}
 ------------------------------------------------------------------------------
 -- Username
 ------------------------------------------------------------------------------
@@ -346,7 +290,8 @@ data AuthenticateURL
       AuthenticationMethods (Maybe (AuthenticationMethod, [Text]))
     | HappstackAuthenticateClient
     | Logout
---    | AmAuthenticated
+    | AmAuthenticated
+    | InitClient
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 
 makeBoomerangs ''AuthenticateURL
@@ -358,7 +303,8 @@ authenticateURL =
     "authentication-methods" </> ( rAuthenticationMethods . rMaybe authenticationMethod)
   <> "happstack-authenticate-client" . rHappstackAuthenticateClient
   <> "logout" . rLogout
---   <> "am-authenticated" . rAmAuthenticated
+  <> "am-authenticated" . rAmAuthenticated
+  <> "init-client" . rInitClient
   )
   where
     userId = rUserId . integer
@@ -377,20 +323,39 @@ nestAuthenticationMethod :: (PathInfo methodURL) =>
 nestAuthenticationMethod authenticationMethod =
   nestURL $ \methodURL -> AuthenticationMethods $ Just (authenticationMethod, toPathSegments methodURL)
 
+------------------------------------------------------------------------------
+-- ClientInitData
+------------------------------------------------------------------------------
 
--- | The `Token` type represents the encrypted data used to identify a
--- user.
+-- | The `Token` type represents the data used to identify a user. The
+-- name used to make more sense and it should probably be renamed.
+data ClientInitData = ClientInitData
+  { _cidUser               :: Maybe User
+  , _cidPostLoginRedirectURL  :: Maybe Text
+  , _cidPostSignupRedirectURL :: Maybe Text
+  }
+    deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
+makeLenses ''ClientInitData
+instance ToJSON   ClientInitData where toJSON    = genericToJSON    jsonOptions
+instance FromJSON ClientInitData where parseJSON = genericParseJSON jsonOptions
+
+------------------------------------------------------------------------------
+-- Token
+------------------------------------------------------------------------------
+
+-- | The `Token` type represents the data used to identify a user. The
+-- name used to make more sense and it should probably be renamed.
 data Token = Token
   { _tokenUser        :: User
-  , _tokenIsAuthAdmin :: Bool
   }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 makeLenses ''Token
 instance ToJSON   Token where toJSON    = genericToJSON    jsonOptions
 instance FromJSON Token where parseJSON = genericParseJSON jsonOptions
 
+
 ------------------------------------------------------------------------------
--- Token / TokenText
+-- TokenText
 ------------------------------------------------------------------------------
 
 -- | `TokenText` is the encrypted form of the `Token` which is passed

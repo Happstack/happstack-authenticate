@@ -141,11 +141,11 @@ token authenticateState authenticateConfig passwordState =
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
                      then resp 200 $ toJSONError InvalidUsernamePassword
-                     else do token <- addTokenCookie authenticateState authenticateConfig u
+                     else do addTokenCookie authenticateState authenticateConfig u
 #if MIN_VERSION_aeson(2,0,0)
-                             resp 201 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON token)])
+                             resp 201 $ toJSONSuccess (Object $ KM.fromList      [("token", toJSON (Token u))])
 #else
-                             resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON token)])
+                             resp 201 $ toJSONSuccess (Object $ HashMap.fromList [("token", toJSON (Token u))])
 #endif
 
 ------------------------------------------------------------------------------
@@ -203,11 +203,11 @@ account authenticateState passwordState authenticateConfig passwordConfig Nothin
                                          Nothing -> pure ()
                                          (Just callback) -> liftIO $ callback user
 --                                       ok $ (Right (user ^. userId))
-                                       tkn <- addTokenCookie authenticateState authenticateConfig user
+                                       addTokenCookie authenticateState authenticateConfig user
 #if MIN_VERSION_aeson(2,0,0)
-                                       resp 201 $ Right (Object $ KM.fromList      [("token", toJSON tkn)])
+                                       resp 201 $ Right (Object $ KM.fromList      [("token", toJSON (Token user))])
 #else
-                                       resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON tkn)])
+                                       resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON (Token user))])
 #endif
     where
       validEmail :: Bool -> Maybe Email -> Maybe PasswordError
@@ -249,9 +249,9 @@ account authenticateState passwordState authenticateConfig passwordConfig (Just 
                                                    pw <- mkHashedPass (changePassword ^. cpNewPassword)
                                                    update' passwordState (SetPassword uid pw)
 #if MIN_VERSION_aeson(2,0,0)
-                                                   resp 201 $ Right (Object $ KM.fromList      [("token", toJSON token)])
+                                                   resp 201 $ Right (Object $ KM.fromList      [("token", toJSON (Token $ token ^. tokenUser))])
 #else
-                                                   resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON token)])
+                                                   resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON (Token $ token ^. tokenUser))])
 #endif
 
 
@@ -385,30 +385,6 @@ passwordReset authenticateState passwordState passwordConfig =
                                      update' passwordState (SetPassword (user ^. userId) pw)
                                      -- FIXME: how can we immediately expire the reset token?
                                      ok $ Right "Password Reset." -- I18N
-         {-
-         do mTokenTxt <- optional $ queryString $ lookText' "reset_btoken"
-            case mTokenTxt of
-              Nothing -> badRequest $ Left MissingResetToken
-              (Just tokenTxt) ->
-                do mUser <- decodeAndVerifyResetToken authenticateState tokenTxt
-                   case mUser of
-                     Nothing     -> return (Left InvalidResetToken)
-                     (Just (user, _)) ->
-                       if password /= passwordConfirm
-                       then return (Left PasswordMismatch)
-                       else do pw <-  mkHashedPass password
-                               update' passwordState (SetPassword (user ^. userId) pw)
-                               ok $ Right ()
---         ok $ Right $ Text.pack $ show (password, passwordConfirm)
--}
-
-  {-
-  do mToken <- optional <$> queryString $ lookText "token"
-     case mToken of
-       Nothing      -> return (Left MissingResetToken)
-       (Just token) ->
-         do method GET
--}
 
 decodeAndVerifyResetToken :: (MonadIO m) =>
                              AcidState AuthenticateState

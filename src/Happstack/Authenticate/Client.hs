@@ -51,7 +51,7 @@ import GHCJS.Foreign.Export (Export, export, derefExport)
 import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal, jsval)
-import Happstack.Authenticate.Core (Email(..), User(..), Username(..), AuthenticateURL(AuthenticationMethods, Logout), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
+import Happstack.Authenticate.Core (ClientInitData(..), Email(..), User(..), Username(..), AuthenticateURL(AmAuthenticated, AuthenticationMethods, InitClient, Logout), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
 import qualified Happstack.Authenticate.Core as Authenticate
 import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
@@ -67,13 +67,7 @@ import qualified GHCJS.DOM             as GHCJS
 import System.IO (hFlush, stdout, hGetBuffering, hSetBuffering, BufferMode(..))
 import Text.Shakespeare.I18N                (Lang, mkMessageFor, renderMessage)
 import Unsafe.Coerce                   (unsafeCoerce)
-import Web.JWT                         (Algorithm(HS256), JWT, UnverifiedJWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, secondsSinceEpoch, intDate, verify)
-import qualified Web.JWT               as JWT
-#if MIN_VERSION_jwt(0,8,0)
-import Web.JWT                         (ClaimsMap(..), hmacSecret)
-#else
-import Web.JWT                         (secret)
-#endif
+
 import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
 
 debugPrint :: Show a => a -> IO ()
@@ -143,8 +137,6 @@ userKey = "user"
 data UserItem = UserItem
   { _uiAuthAdmin :: Bool
   , _uiUser      :: User
-  , _uiToken     :: Text
---  , _claims          :: JWTClaimsSet
   }
   deriving (Eq, Show, Generic)
 instance ToJSON   UserItem where toJSON    = genericToJSON    jsonOptions
@@ -433,6 +425,32 @@ postSignupRedirect modelTV =
          setHref location url
          pure ()
 
+extractInitClientData :: TVar AuthenticateModel -> JSONResponse -> IO ()
+extractInitClientData modelTV jr =
+  case _jrStatus jr of
+    NotOk ->
+      case _jrData jr of
+        (String err) ->
+          do atomically $ modifyTVar' modelTV $ \m ->
+                      m & usernamePasswordError .~ (Text.unpack err)
+             doRedraws modelTV
+        _ ->
+          do atomically $ modifyTVar' modelTV $ \m ->
+                      m & usernamePasswordError .~ "An unexpected error occurred. Please contact technical support."
+             doRedraws modelTV
+    Ok ->
+      do debugStrLn $ show (_jrData jr)
+         case fromJSON (_jrData jr) of
+           (Error e) -> debugStrLn e
+           (Success cid) ->
+             do debugStrLn $ show (cid :: ClientInitData)
+                atomically $ modifyTVar' modelTV $ \m ->
+                  m & muser .~ (_cidUser cid)
+                    & postLoginRedirectURL  .~ (_cidPostLoginRedirectURL cid)
+                    & postSignupRedirectURL .~ (_cidPostSignupRedirectURL cid)
+                doRedraws modelTV
+
+
 extractJWT :: TVar AuthenticateModel -> JSONResponse -> IO ()
 extractJWT modelTV jr =
   case _jrStatus jr of
@@ -450,85 +468,24 @@ extractJWT modelTV jr =
       case (_jrData jr) of
         (Object object) ->
           case KM.lookup ("token" :: Text) object of
-            (Just (String tkn)) ->
-              updateAuthenticateModelFromToken modelTV tkn
+--            (Just (String tkn)) ->
+--              updateAuthenticateModelFromToken modelTV tkn
+            (Just o) ->
+              do debugPrint $  "Got a token, but it is not a string: " ++ show o
+                 case fromJSON o of
+                   (Success tkn@(Authenticate.Token u)) ->
+                     do debugPrint $  "Got token " ++ show (u :: User)
+                        updateAuthenticateModelFromToken modelTV tkn
+                   (Error e) ->
+                     do debugStrLn $ "fromJSON aa - " ++ e
         _ -> debugPrint "Could not find a token that is a string"
 
-{-
-                                          let claims = Text.splitOn "." tkn
-                                          debugPrint claims
-                                          debugPrint (map (urlBase64Decode . Text.encodeUtf8) claims)
--}
-
-updateAuthenticateModelFromToken :: TVar AuthenticateModel -> Text -> IO ()
-updateAuthenticateModelFromToken modelTV tkn =
-              do debugStrLn $ "tkn = " ++ show tkn
-                 let mJwt = JWT.decode tkn
-                 debugStrLn $ "jwt = " ++ show mJwt
-                 case mJwt of
-                   Nothing -> debugStrLn "Failed to decode"
-                   (Just jwt) ->
-                     do let cl = unClaimsMap (unregisteredClaims (JWT.claims jwt))
-                        debugStrLn $ "unregistered claims = "++ show cl
-                        case Map.lookup "user" cl of
-                          Nothing -> debugStrLn "User not found"
-                          (Just object) ->
-                            do debugPrint object
-                               case fromJSON object of
-                                 (Success u) ->
-                                   do case Map.lookup "authAdmin" cl of
-                                        Nothing -> debugStrLn "authAdmin not found"
-                                        (Just aa) ->
-                                          case fromJSON aa of
-                                            (Error e) -> debugStrLn $ "fromJSON aa - " ++ e
-                                            (Success b) ->
-                                              do debugPrint (u :: User, b :: Bool)
-                                                 (Just w) <- GHCJS.currentWindow
-                                                 ls <- getLocalStorage w
-                                             {-
-                                             mi <- getItem ls ("user" :: JSString)
-                                             debugStrLn $ "getItem user = " ++ show (mi :: Maybe Text)
-                                             -}
-                                                 let userItem = UserItem { _uiAuthAdmin  = b
-                                                                         , _uiUser  = u
-                                                                         , _uiToken = tkn
-                                                                         }
-                                             --                              setItem ls ("user" :: JSString) (lazyTextToJSString (Aeson.encodeToLazyText cl))
-                                                 setItem ls userKey (lazyTextToJSString (Aeson.encodeToLazyText userItem))
-                                                 atomically $ modifyTVar' modelTV $ \m ->
-                                                   m & muser   .~ Just u
-                                                     & isAdmin .~ b
-
-                                                 -- post login redirect
-                                                 case Map.lookup "postLoginRedirectURL" cl of
-                                                   Nothing ->
-                                                     do debugStrLn $ "extractJWT: did not find postLoginRedirectURL"
-                                                        pure ()
-                                                   (Just plr) ->
-                                                     case fromJSON plr of
-                                                       (Error e) -> debugStrLn e
-                                                       (Success mu) ->
-                                                         do debugPrint $ "postLoginRedirectURL = " ++ show mu
-                                                            atomically $ modifyTVar' modelTV $ \m ->
-                                                              m & postLoginRedirectURL .~ mu
-
-                                                 -- post signup redirect
-                                                 case Map.lookup "postSignupRedirectURL" cl of
-                                                   Nothing ->
-                                                     do debugStrLn $ "extractJWT: did not find postSignupRedirectURL"
-                                                        pure ()
-                                                   (Just psr) ->
-                                                     case fromJSON psr of
-                                                       (Error e) -> debugStrLn e
-                                                       (Success mu) ->
-                                                         do debugPrint $ "postSignupRedirectURL = " ++ show mu
-                                                            atomically $ modifyTVar' modelTV $ \m ->
-                                                              m & postSignupRedirectURL .~ mu
-
-                                                 doRedraws modelTV
-
-                                 (Error e) -> debugStrLn e
-
+updateAuthenticateModelFromToken :: TVar AuthenticateModel -> Authenticate.Token -> IO ()
+updateAuthenticateModelFromToken modelTV (Authenticate.Token u) =
+  do atomically $ modifyTVar' modelTV $ \m ->
+                                           m & muser .~ Just u
+                                             & isAdmin .~ False
+     doRedraws modelTV
 
 ajaxHandler :: TVar AuthenticateModel -> (JSONResponse -> IO ()) -> XMLHttpRequest -> EventObject ReadyStateChange -> IO ()
 ajaxHandler modelTV handler xhr ev =
@@ -631,7 +588,9 @@ signupAjaxHandler modelTV xhr phHandlers e =
                     do debugStrLn "signupAjaxHandler - did not get a User even though we should have."
                        pure ()
                   (Just u) ->
-                    do mapM_ (\h -> h (_userId u)) phHandlers
+                    do debugStrLn "signupAjaxHandler - got user. calling signup handlers."
+                       mapM_ (\h -> h (_userId u)) phHandlers
+                       debugStrLn "signupAjaxHandler - handlers complete. do postSignupRedirect."
                        postSignupRedirect modelTV
                        pure ()
 
@@ -847,7 +806,7 @@ resetPasswordHandler routeFn inputNewPassword inputNewPasswordConfirm modelTV e 
             debugStrLn $ "Unable to reset password - " ++ show (mresetToken, mnewPassword, mnewPasswordConfirm)
             pure ()
 
-
+{-
 storageHandler :: TVar AuthenticateModel
                -> StorageEventObject Chili.Storage
                -> IO ()
@@ -876,7 +835,7 @@ setAuthenticateModel modelTV v =
              m & muser   .~ Just (_uiUser ui)
                & isAdmin .~ (_uiAuthAdmin ui)
          updateAuthenticateModelFromToken modelTV (_uiToken ui)
-
+-}
 clearUser :: (AuthenticateURL -> Text) -> TVar AuthenticateModel -> IO ()
 clearUser routeFn modelTV =
   do atomically $ modifyTVar' modelTV $ \m ->
@@ -903,20 +862,23 @@ initHappstackAuthenticateClient baseURL sps =
      hSetBuffering stdout LineBuffering
      (Just d) <- currentDocument
 
+     let routeFn = (\url -> baseURL <> toPathInfo url)
+
      modelTV <- newTVarIO initAuthenticateModel
  -- (toJSNode d)
 --     update <- mkUpdate newNode
 
-     -- load UserInfo from localStorage, if it exists
-     (Just w) <- GHCJS.currentWindow
-     ls <- getLocalStorage w
-     mi <- getItem ls userKey
-     case mi of
-       Nothing -> pure ()
-       (Just v) -> do --FIXME: check that atc exists an has same token value
-                      setAuthenticateModel modelTV v
+     -- fetch client information from server
+     xhr <- newXMLHttpRequest
+     open xhr "GET" (routeFn InitClient) True
+     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler modelTV (\jr -> extractInitClientData modelTV jr) xhr) False
+     send xhr
 
-     let routeFn = (\url -> baseURL <> toPathInfo url)
+     (Just w) <- GHCJS.currentWindow
+
+     -- remove old LocalStorage token if exists
+     ls <- getLocalStorage w
+     removeItem ls userKey
 
      -- up-force-logout
      mForceLogouts <- getElementsByTagName d "up-force-logout"
@@ -1084,38 +1046,23 @@ initHappstackAuthenticateClient baseURL sps =
                        (Just inputNewPassword)        <- getElementById  d "cp-new-password"
                        (Just inputNewPasswordConfirm) <- getElementById  d "cp-new-password-confirm"
 
---                     (Just inputUsername) <- getElementById  d "username"
---                     (Just inputPassword) <- getElementById  d "password"
                        update =<< (atomically $ readTVar modelTV)
                        addEventListener newNode (ev @Submit) (changePasswordHandler (\url -> baseURL <> toPathInfo url) inputOldPassword inputNewPassword inputNewPasswordConfirm modelTV) False
---                       addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                        pure update
---                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
-                     -- listen for changes to local storage
---                     (Just w) <- window
---                     addEventListener w (ev @Chili.Storage) (storageHandler update modelTV) False
 
               updates <- mapNodes attachChangePassword upChangePasswords
               pure updates
 
-{-
-     let update m =
-           do debugStrLn "storage update handler"
-              mapM_ (\f -> f m) (redrawLogins ++ redrawSignupPassword)
--}
      atomically $ modifyTVar' modelTV $
        \m -> m & redraws .~ redrawLogins ++ redrawLoginsInline ++ redrawSignupPassword ++ redrawRequestResetPassword ++ redrawResetPassword ++ redrawChangePassword
 
-     -- listen for changes to local storage
-     (Just w) <- window
-     addEventListener w (ev @Chili.Storage) (storageHandler modelTV) False
+     doRedraws modelTV
 
 {-
-     (Just rootNode) <- getFirstChild (toJSNode d)
-     replaceChild (toJSNode d) newNode rootNode
-
-     update =<< (atomically $ readTVar model)
-     addEventListener d (ev @Click) (clickHandler update model) False
+     xhr <- newXMLHttpRequest
+     open xhr "GET" (routeFn InitClient) True
+     addEventListener xhr (ev @ReadyStateChange) (ajaxHandler modelTV (\jr -> extractInitClientData modelTV jr) xhr) False
+     send xhr
 -}
      debugStrLn "initHappstackAuthenticateClient finish."
      pure ()
@@ -1245,30 +1192,3 @@ clientMain sps =
                 (Just url) ->
                   do mapM_ (debugStrLn . Text.unpack . fst) sps
                      initHappstackAuthenticateClient (textFromJSString url) sps
-                  {-
-                  do -- sps <- newTVarIO  [("dummy", dummyPlugin)]
-                     -- setHappstackAuthenticateClientPlugins sps
-                     msps' <- getHappstackAuthenticateClientPlugins
-                     case msps' of
-                       Nothing -> putStrLn "Could not fetch Signup plugins"
-                       (Just sps') ->
-                         do putStrLn "Happstack Authenticate Signup Plugins"
-                            mapM_ (putStrLn . Text.unpack . fst) sps'-}
-
---
-
-{-
-       debugStrLn "setting initHappstackAuthenticateClient"
-       callback <- syncCallback1 ContinueAsync $ \jv -> do
-         initHappstackAuthenticateClient
-         pure ()
-       set_initHappstackAuthenticateClient callback
--}
-{-
-       callback <- syncCallback1' $ \jv -> do
-         (str :: String) <- unpack . fromJust <$> fromJSVal jv
-         (o :: Object) <- create
-         setProp (pack "helloworld" :: JSString) (jsval . pack $ "hello, " ++ str) o
-         return $ jsval o
-       set_callback callback
--}

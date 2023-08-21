@@ -43,20 +43,11 @@ import Happstack.Authenticate.Password.URL (AccountURL(..))
 -- import System.FilePath                 (combine)
 -- import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
-import qualified Web.JWT               as JWT
-import Web.JWT                         (Algorithm(HS256), JWT, VerifiedJWT, JWTClaimsSet(..), encodeSigned, claims, decode, decodeAndVerifySignature, intDate, secondsSinceEpoch, verify)
-#if MIN_VERSION_jwt(0,8,0)
-import Web.JWT                         (ClaimsMap(..), hmacSecret)
-#else
-import Web.JWT                         (secret)
-#endif
+
+
 import Web.Routes
 import Web.Routes.TH
 
-#if MIN_VERSION_jwt(0,8,0)
-#else
-unClaimsMap = id
-#endif
 
 ------------------------------------------------------------------------------
 -- PasswordError
