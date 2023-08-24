@@ -403,13 +403,13 @@ urlBase64Decode bs = Base64.decode (addPadding (BS.map urlDecode  bs))
 postLoginRedirect :: TVar AuthenticateModel -> IO ()
 postLoginRedirect modelTV =
   do m <- atomically $ readTVar modelTV
-     case _postLoginRedirectURL m of
-       Nothing -> pure ()
-       (Just url) -> do
+     case (_postLoginRedirectURL m, _muser m) of
+       (Just url, Just _) -> do
          (Just w) <- GHCJS.currentWindow
          location <- getLocation w
          setHref location url
          pure ()
+       _ -> pure ()
 
 postSignupRedirect :: TVar AuthenticateModel -> IO ()
 postSignupRedirect modelTV =
