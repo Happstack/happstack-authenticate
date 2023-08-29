@@ -136,7 +136,7 @@ token authenticateState authenticateConfig passwordState =
        (Just (UserPass username password)) ->
          do mUser <- query' authenticateState (GetUserByUsername username)
             case mUser of
-              Nothing -> forbidden $ toJSONError InvalidUsername
+              Nothing -> forbidden $ toJSONError InvalidUsernamePassword
               (Just u) ->
                 do valid <- query' passwordState (VerifyPasswordForUserId (u ^. userId) password)
                    if not valid
@@ -384,7 +384,7 @@ passwordReset authenticateState passwordState passwordConfig =
                        Nothing -> do pw <-  mkHashedPass password
                                      update' passwordState (SetPassword (user ^. userId) pw)
                                      -- FIXME: how can we immediately expire the reset token?
-                                     ok $ Right "Password Reset." -- I18N
+                                     ok $ Right (renderMessage HappstackAuthenticateI18N ["en"] PasswordResetSuccess) -- I18N
 
 decodeAndVerifyResetToken :: (MonadIO m) =>
                              AcidState AuthenticateState

@@ -77,6 +77,25 @@ instance FromJSON PasswordError where parseJSON = genericParseJSON jsonOptions
 
 mkMessageFor "HappstackAuthenticateI18N" "PasswordError" "messages/password/error" ("en")
 
+data PartialMsgs
+  = UsernameMsg
+  | EmailMsg
+  | PasswordMsg
+  | PasswordConfirmationMsg
+  | SignUpMsg
+  | SignInMsg
+  | LogoutMsg
+  | OldPasswordMsg
+  | NewPasswordMsg
+  | NewPasswordConfirmationMsg
+  | ChangePasswordMsg
+  | ChangePasswordAuthRequiredMsg
+  | RequestPasswordResetMsg
+  | PasswordChangedMsg
+  | PasswordResetSuccess
+
+mkMessageFor "HappstackAuthenticateI18N" "PartialMsgs" "messages/password/partials" ("en")
+
 ------------------------------------------------------------------------------
 -- HashedPass
 ------------------------------------------------------------------------------

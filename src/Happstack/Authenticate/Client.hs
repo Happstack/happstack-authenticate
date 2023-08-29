@@ -53,7 +53,7 @@ import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal, jsval)
 import Happstack.Authenticate.Core (ClientInitData(..), Email(..), User(..), Username(..), AuthenticateURL(AmAuthenticated, AuthenticationMethods, InitClient, Logout), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
 import qualified Happstack.Authenticate.Core as Authenticate
-import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..))
+import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..), NewAccountData(..), ResetPasswordData(..), RequestResetPasswordData(..), PartialMsgs(..))
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
@@ -84,23 +84,8 @@ getElementByNameAttr :: JSElement -> JSString -> IO (Maybe JSElement)
 getElementByNameAttr node name =
            querySelector node ("[name='" <> name <> "']")
 
-data HappstackAuthenticateI18N = HappstackAuthenticateI18N
 
-data PartialMsgs
-  = UsernameMsg
-  | EmailMsg
-  | PasswordMsg
-  | PasswordConfirmationMsg
-  | SignUpMsg
-  | SignInMsg
-  | LogoutMsg
-  | OldPasswordMsg
-  | NewPasswordMsg
-  | NewPasswordConfirmationMsg
-  | ChangePasswordMsg
-  | ChangePasswordAuthRequiredMsg
-  | RequestPasswordResetMsg
-  | PasswordChangedMsg
+data HappstackAuthenticateI18N = HappstackAuthenticateI18N
 
 mkMessageFor "HappstackAuthenticateI18N" "PartialMsgs" "messages/password/partials" "en"
 
@@ -304,9 +289,7 @@ requestResetPasswordForm =
      -- let changePasswordFn = "resetPassword('" <> url <> "')"
      [domc|
        <d-if cond="(_passwordResetRequested model)">
-
          <p>{{ _requestResetPasswordMsg model }}</p>
-
          <form role="form">
           <div class="form-group happstack-authenticate-error">{{_requestResetPasswordMsg model}}</div>
           <div class="form-group">
@@ -326,17 +309,22 @@ resetPasswordForm =
       <div>
        <form role="form">
         <div class="form-group">{{_resetPasswordMsg model}}</div>
-        <div class="form-group">
-         <label class="sr-only" for="reset-password">{{ render PasswordMsg }}</label>
-         <input class="form-control" type="password" id="rp-reset-password" name="reset-password" placeholder="{{render PasswordMsg}}" />
-        </div>
-        <div class="form-group">
-         <label class="sr-only" for="reset-password-confirm">{{ render PasswordConfirmationMsg }}</label>
-         <input class="form-control" type="password" id="rp-reset-password-confirm" name="reset-password-confirm" placeholder="{{render PasswordConfirmationMsg}}" />
-        </div>
-        <div class="form-group">
-         <input class="form-control" type="submit" value="{{render ChangePasswordMsg}}" />
-        </div>
+        <d-if cond="(_passwordChanged model)">
+         <div></div>
+         <div>
+          <div class="form-group">
+           <label class="sr-only" for="reset-password">{{ render PasswordMsg }}</label>
+           <input class="form-control" type="password" id="rp-reset-password" name="reset-password" placeholder="{{render PasswordMsg}}" />
+          </div>
+          <div class="form-group">
+           <label class="sr-only" for="reset-password-confirm">{{ render PasswordConfirmationMsg }}</label>
+           <input class="form-control" type="password" id="rp-reset-password-confirm" name="reset-password-confirm" placeholder="{{render PasswordConfirmationMsg}}" />
+          </div>
+          <div class="form-group">
+           <input class="form-control" type="submit" value="{{render ChangePasswordMsg}}" />
+          </div>
+         </div>
+        </d-if>
        </form>
       </div>
   |]
@@ -703,7 +691,7 @@ requestResetAjaxHandler modelTV xhr rrpSubmit e =
   ajaxHandler modelTV handler xhr e
   where
     handler jr =
-      do -- debugStrLn $ "requestResetPasswordAjaxHandler - " ++ show jr
+      do debugStrLn $ "requestResetPasswordAjaxHandler - " ++ show jr
          case _jrStatus jr of
            NotOk ->
              case _jrData jr of
@@ -713,7 +701,7 @@ requestResetAjaxHandler modelTV xhr rrpSubmit e =
                     setProperty rrpSubmit "disabled" False
                     doRedraws modelTV
            Ok ->
-             do -- debugStrLn "requestResetPasswordAjaxHandler - cake"
+             do debugStrLn "requestResetPasswordAjaxHandler - cake"
                 case _jrData jr of
                   (String msg) ->
                     do atomically $ modifyTVar' modelTV $ \m ->
@@ -764,6 +752,7 @@ resetAjaxHandler modelTV xhr e =
                   (String msg) ->
                     do atomically $ modifyTVar' modelTV $ \m ->
                          m & resetPasswordMsg .~ (Text.unpack msg)
+                           & passwordChanged .~ True
                        doRedraws modelTV
 
          pure ()

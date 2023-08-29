@@ -10,6 +10,6 @@ NewPasswordMsg: new password
 NewPasswordConfirmationMsg: new password confirmation
 ChangePasswordMsg: change password
 RequestPasswordResetMsg: request password reset
-ChangePasswordAuthRequiredMsg: Can not change password because you are not logged in.
+ChangePasswordAuthRequiredMsg: Can not change password because you are not logged in
 PasswordChangedMsg: Password successfully updated
-
+PasswordResetSuccess: Your password has been successfully reset
