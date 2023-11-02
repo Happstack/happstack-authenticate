@@ -566,6 +566,8 @@ signupAjaxHandler modelTV xhr phHandlers e =
                  do atomically $ modifyTVar' modelTV $ \m ->
                       m & signupError .~ (Text.unpack err)
                     doRedraws modelTV
+               _ ->
+                 do debugStrLn $  "signupAjaxHandler - encountered unexpected type in NotOk branch"
            Ok ->
              do debugStrLn "signupAjaxHandler - Ok"
                 extractJWT modelTV jr
@@ -598,6 +600,8 @@ changePasswordAjaxHandler modelTV xhr e =
                  do atomically $ modifyTVar' modelTV $ \m ->
                       m & changePasswordError .~ (Text.unpack err)
                     doRedraws modelTV
+               _ ->
+                 do debugStrLn $  "changePasswordAjaxHandler - encountered unexpected type in NotOk branch"
            Ok ->
              do debugStrLn "changePasswordAjaxHandler - cake"
 --                extractJWT modelTV jr
@@ -701,6 +705,8 @@ requestResetAjaxHandler modelTV xhr rrpSubmit e =
                       m & requestResetPasswordMsg .~ (Text.unpack err)
                     setProperty rrpSubmit "disabled" False
                     doRedraws modelTV
+               _ ->
+                 do debugStrLn $  "requestResetAjaxHandler - encountered unexpected type in NotOk branch"
            Ok ->
              do debugStrLn "requestResetPasswordAjaxHandler - cake"
                 case _jrData jr of
@@ -709,6 +715,8 @@ requestResetAjaxHandler modelTV xhr rrpSubmit e =
                          m & requestResetPasswordMsg .~ (Text.unpack msg)
                            & passwordResetRequested .~ True
                        doRedraws modelTV
+                  _ ->
+                    do debugStrLn $  "requestResetAjaxHandler - encountered unexpected type in Ok branch"
 
          pure ()
 
@@ -747,6 +755,9 @@ resetAjaxHandler modelTV xhr e =
                  do atomically $ modifyTVar' modelTV $ \m ->
                       m & resetPasswordMsg .~ (Text.unpack err)
                     doRedraws modelTV
+               _ ->
+                 do debugStrLn $ "resetAjaxHandler - encountered unexpected type in NotOk branch"
+
            Ok ->
              do debugStrLn "resetAjaxHandler - cake"
                 case _jrData jr of
@@ -755,6 +766,8 @@ resetAjaxHandler modelTV xhr e =
                          m & resetPasswordMsg .~ (Text.unpack msg)
                            & passwordChanged .~ True
                        doRedraws modelTV
+                  _ ->
+                    do debugStrLn $  "resetAjaxHandler - encountered unexpected type in Ok branch"
 
          pure ()
 
