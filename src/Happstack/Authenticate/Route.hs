@@ -40,6 +40,7 @@ route authenticationHandlers authenticateState authenticateConfigTV url =
          case Map.lookup authenticationMethod authenticationHandlers of
            (Just handler) -> handler pathInfo
            Nothing        -> notFound $ toJSONError (HandlerNotFound {- authenticationMethod-} ) --FIXME
+       (AuthenticationMethods Nothing) -> notFound $ toJSONError HandlerNotFound
        HappstackAuthenticateClient ->
          do ac <- liftIO $ atomically $ readTVar authenticateConfigTV
             case _happstackAuthenticateClientPath ac of

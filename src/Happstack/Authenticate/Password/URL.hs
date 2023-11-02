@@ -49,7 +49,6 @@ data PasswordURL
   | Account (Maybe (UserId, AccountURL))
   | PasswordRequestReset
   | PasswordReset
-  | UsernamePasswordCtrl
   deriving (Eq, Ord, Data, Typeable, Generic)
 
 makeBoomerangs ''PasswordURL
@@ -60,7 +59,6 @@ passwordURL =
   <> "account" </> rAccount . rMaybe (rPair . (rUserId . integer) </> accountURL)
   <> "password-request-reset" . rPasswordRequestReset
   <> "password-reset"         . rPasswordReset
-  <> "js" </> rUsernamePasswordCtrl
   )
 
 instance PathInfo PasswordURL where
