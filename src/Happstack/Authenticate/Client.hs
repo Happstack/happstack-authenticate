@@ -459,14 +459,15 @@ extractJWT modelTV jr =
 --            (Just (String tkn)) ->
 --              updateAuthenticateModelFromToken modelTV tkn
             (Just o) ->
-              do debugPrint $  "Got a token, but it is not a string: " ++ show o
+              do debugStrLn $  "Got a token, but it is not a string: " ++ show o
                  case fromJSON o of
                    (Success tkn@(Authenticate.Token u)) ->
                      do debugPrint $  "Got token " ++ show (u :: User)
                         updateAuthenticateModelFromToken modelTV tkn
                    (Error e) ->
                      do debugStrLn $ "fromJSON aa - " ++ e
-        _ -> debugPrint "Could not find a token that is a string"
+            _ -> debugStrLn "Could not find a token that is a string"
+        _ -> debugStrLn "_jrData is not an Object"
 
 updateAuthenticateModelFromToken :: TVar AuthenticateModel -> Authenticate.Token -> IO ()
 updateAuthenticateModelFromToken modelTV (Authenticate.Token u) =

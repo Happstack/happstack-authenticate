@@ -1,6 +1,6 @@
 Cabal-version:       2.2
 Name:                happstack-authenticate
-Version:             3.1.0
+Version:             3.1.1
 Synopsis:            Happstack Authentication Library
 Description:         A themeable authentication library with support for username+password
 Homepage:            http://www.happstack.com/
@@ -58,6 +58,7 @@ common shared-ghcjs-properties
 Library
   import:              shared-properties
   import:              shared-ghcjs-properties
+  ghc-options:         -Werror=incomplete-patterns
   hs-source-dirs:      src
   if flag(Debug)
     cpp-options: "-DDEBUG_CLIENT"
