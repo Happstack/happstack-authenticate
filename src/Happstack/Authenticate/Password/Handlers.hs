@@ -42,7 +42,7 @@ import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
 import Network.HTTP.Types              (toQuery, renderQuery)
-import Network.Mail.Mime               (Address(..), Mail(..), simpleMail', renderMail', renderSendMail, renderSendMailCustom, sendmail)
+import Network.Mail.Mime               (Address(..), Mail(..), simpleMail', renderAddress, renderMail', renderSendMail, renderSendMailCustom, sendmail)
 import System.FilePath                 (combine)
 import qualified Text.Email.Validate   as Email
 import Text.Shakespeare.I18N           (RenderMessage(..), Lang, mkMessageFor)
@@ -359,8 +359,8 @@ sendResetEmail mSendmailPath (Email toEm) (SimpleAddress fromNm (Email fromEm)) 
   where
     addReplyTo :: Maybe SimpleAddress -> Mail -> Mail
     addReplyTo Nothing m = m
-    addReplyTo (Just (SimpleAddress rplyToNm rplyToEm)) m =
-      let m' = m { mailHeaders = (mailHeaders m) } in m'
+    addReplyTo (Just (SimpleAddress rplyToNm (Email rplyToEm))) m =
+      let m' = m { mailHeaders = (mailHeaders m)  ++ [("reply-to", renderAddress (Address rplyToNm rplyToEm))] } in m'
 
 passwordReset :: (Happstack m) =>
                  AcidState AuthenticateState
