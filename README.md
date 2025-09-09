@@ -19,3 +19,4 @@ Track creation date of user account.
 
 Allow hooks to be called when a new account is created.
 
+usernames should be case insensitive.
