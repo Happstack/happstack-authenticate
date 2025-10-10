@@ -66,6 +66,7 @@ data PasswordError
   | PasswordInternalError
   | PasswordMismatch
   | SendmailError
+  | HumanityCheckFailed
   | UnacceptablePassword { passwordErrorMessageMsg :: Text }
   | CoreError { passwordErrorMessageE :: CoreError }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
@@ -144,6 +145,7 @@ data NewAccountData = NewAccountData
     { _naUser            :: User
     , _naPassword        :: Text
     , _naPasswordConfirm :: Text
+    , _naTurnstileToken  :: Maybe Text
     }
     deriving (Eq, Ord, Read, Show, Data, Typeable, Generic)
 makeLenses ''NewAccountData

@@ -146,18 +146,42 @@ deriveSafeCopy 1 'base ''NewAccountMode
 -- AuthenticateState
 ------------------------------------------------------------------------------
 
+data Turnstile = Turnstile
+  { turnstileSiteKey   :: Text
+  , turnstileSecretKey :: Text
+  }
+ deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 1 'base ''Turnstile
+makeLenses ''Turnstile
+
 -- | this acid-state value contains the state common to all
 -- authentication methods
+data AuthenticateState_1 = AuthenticateState_1
+    { _sharedSecrets_1             :: SharedSecrets
+    , _users_1                     :: IxUser
+    , _nextUserId_1                :: UserId
+    , _defaultSessionTimeout_1     :: Int     -- ^ default session time out in seconds
+    , _newAccountMode_1            :: NewAccountMode
+    }
+    deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 1 'base ''AuthenticateState_1
+makeLenses ''AuthenticateState_1
+
 data AuthenticateState = AuthenticateState
     { _sharedSecrets             :: SharedSecrets
     , _users                     :: IxUser
     , _nextUserId                :: UserId
     , _defaultSessionTimeout     :: Int     -- ^ default session time out in seconds
     , _newAccountMode            :: NewAccountMode
+    , _turnstile                 :: Maybe Turnstile
     }
     deriving (Eq, Show, Typeable, Generic)
-deriveSafeCopy 1 'base ''AuthenticateState
+deriveSafeCopy 2 'extension ''AuthenticateState
 makeLenses ''AuthenticateState
+
+instance Migrate AuthenticateState where 
+  type MigrateFrom AuthenticateState = AuthenticateState_1
+  migrate (AuthenticateState_1 ss us nui dst nam) = AuthenticateState ss us nui dst nam Nothing
 
 -- | a reasonable initial 'AuthenticateState'
 initialAuthenticateState :: AuthenticateState
@@ -167,6 +191,7 @@ initialAuthenticateState = AuthenticateState
     , _nextUserId                = UserId 1
     , _defaultSessionTimeout     = 60*60
     , _newAccountMode            = OpenRegistration
+    , _turnstile                 = Nothing
     }
 
 ------------------------------------------------------------------------------
@@ -215,6 +240,19 @@ setNewAccountMode mode =
 getNewAccountMode :: Query AuthenticateState NewAccountMode
 getNewAccountMode =
   view newAccountMode
+
+------------------------------------------------------------------------------
+-- Turnstile AcidState Methods
+------------------------------------------------------------------------------
+
+-- | set 'Turnstile' data
+setTurnstile :: Maybe Turnstile
+             -> Update AuthenticateState ()
+setTurnstile t =
+  turnstile .= t
+
+getTurnstile :: Query AuthenticateState (Maybe Turnstile)
+getTurnstile = view turnstile
 
 ------------------------------------------------------------------------------
 -- User related AcidState Methods
@@ -328,6 +366,8 @@ makeAcidic ''AuthenticateState
     , 'getUserByEmail
     , 'getUsersByEmail
     , 'getAuthenticateState
+    , 'setTurnstile
+    , 'getTurnstile
     ]
 
 ------------------------------------------------------------------------------

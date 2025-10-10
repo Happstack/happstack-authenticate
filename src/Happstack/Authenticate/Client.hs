@@ -48,7 +48,7 @@ import Dominator.DOMC
 import Dominator.JSDOM
 import GHCJS.Marshal(toJSVal, fromJSVal)
 import GHCJS.Foreign.Export (Export, export, derefExport)
-import GHCJS.Foreign.Callback (Callback, syncCallback1, OnBlocked(ContinueAsync))
+import GHCJS.Foreign.Callback (OnBlocked(..), Callback, syncCallback1, OnBlocked(ContinueAsync))
 import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal, jsval)
 import Happstack.Authenticate.Core (ClientInitData(..), Email(..), User(..), Username(..), AuthenticateURL(AmAuthenticated, AuthenticationMethods, InitClient, Logout), AuthenticationMethod(..), JSONResponse(..), Status(..), jsonOptions)
@@ -107,6 +107,7 @@ data AuthenticateModel = AuthenticateModel
   , _postLoginRedirectURL      :: Maybe Text
   , _postSignupRedirectURL     :: Maybe Text
   , _redraws                   :: [AuthenticateModel -> IO ()]
+  , _turnstileToken            :: Maybe Text
   }
 makeLenses ''AuthenticateModel
 
@@ -143,6 +144,7 @@ initAuthenticateModel = AuthenticateModel
  , _postLoginRedirectURL      = Nothing
  , _postSignupRedirectURL     = Nothing
  , _redraws                   = []
+ , _turnstileToken            = Nothing
  }
 
 data SignupPlugin = forall a. SignupPlugin
@@ -188,10 +190,14 @@ dummyPlugin = SignupPlugin
 signupPasswordForm :: [(Text, SignupPlugin)] -> JSDocument -> IO (JSNode, AuthenticateModel -> IO ())
 signupPasswordForm sps =
   [domc|
+    <div>
+     <div id="cf-turnstile-widget" class="cf-turnstile"></div>
+
       <d-if cond="isJust (_muser model)">
         <p>
           <span>You are currently logged in as </span><span>{{ maybe "Unknown" (Text.unpack . _unUsername . _username) (_muser model) }}</span><span>. To create a new account you must first </span><a data-ha-action="logout" href="#">{{ render LogoutMsg }}</a>
         </p>
+
         <form role="form">
          <div class="form-group error">{{_signupError model}}</div>
          <div class="form-group">
@@ -215,7 +221,9 @@ signupPasswordForm sps =
           <input class="form-control" type="submit" value="{{render SignUpMsg}}" />
          </div>
         </form>
+
       </d-if>
+     </div>
         |]
     where
       pluginList :: JSDocument -> IO (JSNode,  SignupPlugin -> IO ())
@@ -615,11 +623,15 @@ signupHandler :: (AuthenticateURL -> Text) -> [(Text, SignupPlugin)] -> JSElemen
 signupHandler routeFn sps rootNode inputUsername inputEmail inputPassword inputPasswordConfirm modelTV e =
   do preventDefault e
      stopPropagation e
+
      musername        <- getValue inputUsername
      memail           <- getValue inputEmail
      mpassword        <- getValue inputPassword
      mpasswordConfirm <- getValue inputPasswordConfirm
-     debugStrLn $ "signupHandler - " ++ show (musername, memail, mpassword, mpasswordConfirm)
+
+     token            <- atomically $ fmap _turnstileToken (readTVar modelTV )
+     debugStrLn $ "signupHandler - " ++ show (musername, memail, mpassword, mpasswordConfirm, token)
+
      case (musername, memail, mpassword, mpasswordConfirm) of
        (Just username, Just email, Just password, Just passwordConfirm) ->
          do let newAccountData =
@@ -629,6 +641,7 @@ signupHandler routeFn sps rootNode inputUsername inputEmail inputPassword inputP
                                                   }
                                  , _naPassword        = textFromJSString password
                                  , _naPasswordConfirm = textFromJSString passwordConfirm
+                                 , _naTurnstileToken  = token
                                  }
 
             -- validate plugins
@@ -858,9 +871,22 @@ clearUser routeFn modelTV =
      send xhr
      doRedraws modelTV
 
+-- foreign import javascript unsafe "turnstile.render($1, { sitekey: $2, callback: function(token) {console.log('turnstile success', token);} })"
+foreign import javascript unsafe "turnstile.render($1, { sitekey: $2, callback: $3 })"
+  js_turnstileRender :: JSString -> JSString -> Callback (JSVal -> IO ()) -> IO JSVal
+
+-- NOTE: instead of selector, render can also take an implementation of HTMLElement
+-- we should implement a binding to that version as well
+turnstileRender :: Text -> Text -> (JSString -> IO ()) -> IO JSVal
+turnstileRender turnstileId turnstileSiteKey onSuccess =
+  do cb <- syncCallback1 ThrowWouldBlock (\jsval ->
+                                            do (Just token) <- fromJSVal (jsval :: JSVal)
+                                               onSuccess token)
+     js_turnstileRender (textToJSString turnstileId) (textToJSString turnstileSiteKey) cb
+
 -- FIXME: what happens if this is called twice?
-initHappstackAuthenticateClient :: Text -> [(Text, SignupPlugin)] -> IO ()
-initHappstackAuthenticateClient baseURL sps =
+initHappstackAuthenticateClient :: Text -> Maybe Text -> [(Text, SignupPlugin)] -> IO ()
+initHappstackAuthenticateClient baseURL mTurnstileKey sps =
   do debugStrLn "initHappstackAuthenticateClient"
      hSetBuffering stdout LineBuffering
      (Just d) <- currentDocument
@@ -955,6 +981,18 @@ initHappstackAuthenticateClient baseURL sps =
                        let (Just newElem) = fromJSNode @JSElement newNode
                        addEventListener newNode (ev @Submit) (signupHandler (\url -> baseURL <> toPathInfo url) sps newElem inputUsername inputEmail inputPassword inputPasswordConfirm modelTV) False
                        addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
+
+                       -- add turnstile widget
+                       let addTurnstileToken :: JSString -> IO ()
+                           addTurnstileToken token =
+                             do debugStrLn "Adding turnstile token"
+                                atomically $ modifyTVar' modelTV $  \m -> m { _turnstileToken = Just (textFromJSString token) }
+
+                       case mTurnstileKey of
+                         Nothing -> pure ()
+                         (Just siteKey) ->
+                           do tId <- turnstileRender "#cf-turnstile-widget" siteKey addTurnstileToken
+                              pure ()
                        pure update
 --                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                      -- listen for changes to local storage
@@ -1190,8 +1228,10 @@ clientMain sps =
          (Just script) ->
            do mUrl <- getData (toJSNode script) "baseUrl"
               debugStrLn $ "mUrl = " ++ show mUrl
+              mTurnstileKey <- getData (toJSNode script) "turnstileKey"
+              debugStrLn $ "turnstileKey = " ++ show mTurnstileKey
               case mUrl of
                 Nothing    -> debugStrLn "could not find base url"
                 (Just url) ->
                   do mapM_ (debugStrLn . Text.unpack . fst) sps
-                     initHappstackAuthenticateClient (textFromJSString url) sps
+                     initHappstackAuthenticateClient (textFromJSString url) (fmap textFromJSString mTurnstileKey) sps

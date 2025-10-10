@@ -9,6 +9,7 @@ InvalidResetToken: Invalid reset token
 ExpiredResetToken: The password reset link you used has expired. You must request a new reset link.
 PasswordInternalError: Your request could not be processed. You probably need to contact technical support to resolve this issue.
 PasswordMismatch: Passwords do not match
+HumanityCheckFailed: Humanity checked failed. Are you sure you are not a robot?
 SendmailError: A server configuration error prevented an email from being sent. Please contact us directly
 UnacceptablePassword msg@Text: Unacceptable Password. #{msg}
 CoreError e@CoreError: #{renderMessage HappstackAuthenticateI18N ["en"] e}

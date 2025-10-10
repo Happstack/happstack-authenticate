@@ -41,6 +41,7 @@ import Happstack.Authenticate.Password.Core
 import Happstack.Server
 import HSP.JMacro
 import Language.Javascript.JMacro
+import Network.HTTP.Simple             (Request(..), httpJSON, getResponseBody, parseRequest, setRequestBodyJSON, setRequestMethod)
 import Network.HTTP.Types              (toQuery, renderQuery)
 import Network.Mail.Mime               (Address(..), Mail(..), simpleMail', renderAddress, renderMail', renderSendMail, renderSendMailCustom, sendmail)
 import System.FilePath                 (combine)
@@ -166,6 +167,29 @@ verifyPassword authenticateState passwordState username password =
          (Just user) ->
              query' passwordState (VerifyPasswordForUserId (view userId user) password)
 
+
+verifyTurnstileToken :: Text -> Maybe Text -> IO (Either (Maybe Value) ())
+verifyTurnstileToken _ Nothing = pure (Left Nothing)
+verifyTurnstileToken secret (Just token) =
+  do initReq <- parseRequest "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+     let reqJson = Object (HashMap.fromList [ ( "secret", String secret)
+                                            , ("response", String token)
+                                            ])
+         req = setRequestMethod "POST" $
+               setRequestBodyJSON reqJson $
+               initReq
+     resp <- httpJSON req
+     let json = getResponseBody resp
+     -- liftIO $ print resp
+     case json of
+       (Object obj) ->
+         case HashMap.lookup "success" obj of
+           Nothing -> pure (Left (Just json))
+           (Just success) | success == (Bool True)   -> pure (Right ())
+                          | otherwise -> pure (Left (Just json))
+       _ -> pure (Left (Just json))
+
+
 -- | account handler
 account :: (Happstack m) =>
            AcidState AuthenticateState
@@ -182,32 +206,52 @@ account authenticateState passwordState authenticateConfig passwordConfig Nothin
      case Aeson.decode body of
        Nothing               -> badRequest (Left $ CoreError JSONDecodeFailed)
        (Just newAccount) ->
-           case (authenticateConfig ^. usernameAcceptable) (newAccount ^. naUser ^. username) of
-             (Just e) -> return $ Left (CoreError e)
-             Nothing ->
-                 case validEmail (authenticateConfig ^. requireEmail) (newAccount ^. naUser ^. email) of
-                   (Just e) -> return $ Left e
-                   Nothing ->
-                         if (newAccount ^. naPassword /= newAccount ^. naPasswordConfirm)
-                         then ok $ Left PasswordMismatch
-                         else case (passwordConfig ^. passwordAcceptable) (newAccount ^. naPassword) of
-                                (Just passwdError) -> ok $ Left (UnacceptablePassword passwdError)
-                                Nothing -> do
-                                  eUser <- update' authenticateState (CreateUser $ _naUser newAccount)
-                                  case eUser of
-                                    (Left e) -> return $ Left (CoreError e)
-                                    (Right user) -> do
-                                       hashed <- mkHashedPass (_naPassword newAccount)
-                                       update' passwordState (SetPassword (user ^. userId) hashed)
-                                       case (authenticateConfig ^. createUserCallback) of
-                                         Nothing -> pure ()
-                                         (Just callback) -> liftIO $ callback user
+            -- is username acceptable
+         do case (authenticateConfig ^. usernameAcceptable) (newAccount ^. naUser ^. username) of
+              (Just e) -> return $ Left (CoreError e)
+              Nothing ->
+                -- does email appear to be valid
+                case validEmail (authenticateConfig ^. requireEmail) (newAccount ^. naUser ^. email) of
+                  (Just e) -> return $ Left e
+                  Nothing ->
+                    -- do the passwords match
+                    if (newAccount ^. naPassword /= newAccount ^. naPasswordConfirm)
+                    then ok $ Left PasswordMismatch
+                    -- is the password acceptable
+                    else case (passwordConfig ^. passwordAcceptable) (newAccount ^. naPassword) of
+                           (Just passwdError) -> ok $ Left (UnacceptablePassword passwdError)
+                           Nothing -> do
+                             mUser <- query' authenticateState (GetUserByUsername (newAccount ^. naUser ^. username))
+                             -- is the username aready in use
+                             case mUser of
+                               (Just _) -> return $ Left (CoreError UsernameAlreadyExists)
+                               Nothing -> do
+                                 mTurnstile <- query' authenticateState GetTurnstile
+                                 isHuman <-
+                                   case mTurnstile of
+                                     Nothing -> pure (Right ())
+                                     (Just turnstile) ->
+                                       liftIO $ verifyTurnstileToken (turnstileSecretKey turnstile) (newAccount ^. naTurnstileToken)
+                                 case isHuman of
+                                   (Left mError) ->
+                                     do -- liftIO $ print mError
+                                        pure $ Left HumanityCheckFailed
+                                   (Right ()) -> do
+                                     eUser <- update' authenticateState (CreateUser $ _naUser newAccount)
+                                     case eUser of
+                                       (Left e) -> return $ Left (CoreError e)
+                                       (Right user) -> do
+                                         hashed <- mkHashedPass (_naPassword newAccount)
+                                         update' passwordState (SetPassword (user ^. userId) hashed)
+                                         case (authenticateConfig ^. createUserCallback) of
+                                           Nothing -> pure ()
+                                           (Just callback) -> liftIO $ callback user
 --                                       ok $ (Right (user ^. userId))
-                                       addTokenCookie authenticateState authenticateConfig user
+                                         addTokenCookie authenticateState authenticateConfig user
 #if MIN_VERSION_aeson(2,0,0)
-                                       resp 201 $ Right (Object $ KM.fromList      [("token", toJSON (Token user))])
+                                         resp 201 $ Right (Object $ KM.fromList      [("token", toJSON (Token user))])
 #else
-                                       resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON (Token user))])
+                                         resp 201 $ Right (Object $ HashMap.fromList [("token", toJSON (Token user))])
 #endif
     where
       validEmail :: Bool -> Maybe Email -> Maybe PasswordError
