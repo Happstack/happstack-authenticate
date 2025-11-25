@@ -13,13 +13,14 @@
 {-# LANGUAGE TypeOperators #-}
 module Happstack.Authenticate.Client where
 
+import Control.Monad.Reader (ask)
 import Control.Monad.Trans (MonadIO(liftIO))
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM.TVar (TVar, newTVarIO, modifyTVar', readTVar, writeTVar)
 import Control.Concurrent.STM (atomically)
 import Control.Lens ((&), (.~))
 import Control.Lens.TH (makeLenses)
-import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, createJSElement, ev, getData, getLength, item, key, unJSNode, fromJSNode, getChecked, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setProperty, setRequestHeader, setResponseType, setTextContent, stopPropagation, toJSNode, url, window)
+import Chili.Types (Event(Change, ReadyStateChange, Submit), EventObject, InputEvent(Input), InputEventObject(..), IsJSNode, JSElement, JSNode, JSNodeList, ResourceEvent(Load), StorageEvent(Storage), StorageEventObject, XMLHttpRequest, byteStringToArrayBuffer, createJSElement, ev, getData, getLength, item, key, unJSNode, fromJSNode, getChecked, getFirstChild, getOuterHTML, getValue, newXMLHttpRequest, nodeType, nodeValue, oldValue, open, preventDefault, querySelector, send, sendString, getOuterHTML, getStatus, getReadyState, getResponseByteString, getResponse, getResponseText, getResponseType, item, newValue, nodeListLength, parentNode, replaceChild, remove, sendArrayBuffer, setProperty, setRequestHeader, setResponseType, setTextContent, stopPropagation, toJSNode, url, window)
 import qualified Chili.Types as Chili
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Text as Aeson
@@ -57,6 +58,9 @@ import Happstack.Authenticate.Password.Core(ChangePasswordData(..), UserPass(..)
 import Happstack.Authenticate.Password.URL(AccountURL(Password), PasswordURL(Account, Token, PasswordRequestReset, PasswordReset),passwordAuthenticationMethod)
 import GHC.Generics                    (Generic)
 import GHCJS.DOM.Document              (setCookie)
+import GHCJS.DOM.EventM (EventName, EventM)
+import qualified GHCJS.DOM.EventM as EventM
+import qualified GHCJS.DOM.GlobalEventHandlers as DOM (load)
 import GHCJS.DOM.Location              (Location, getSearch, setHref)
 import qualified GHCJS.DOM.URLSearchParams as Search
 import GHCJS.DOM.Window                (getLocalStorage, getLocation)
@@ -64,11 +68,16 @@ import GHCJS.DOM.Storage               (Storage, getItem, removeItem, setItem)
 import GHCJS.DOM.StorageEvent          (StorageEvent)
 import qualified GHCJS.DOM.StorageEvent as StoragEvent
 import qualified GHCJS.DOM             as GHCJS
+import qualified GHCJS.DOM.Types       as DOM
 import System.IO (hFlush, stdout, hGetBuffering, hSetBuffering, BufferMode(..))
 import Text.Shakespeare.I18N                (Lang, mkMessageFor, renderMessage)
 import Unsafe.Coerce                   (unsafeCoerce)
 
 import Web.Routes (RouteT(..), toPathInfo, toPathSegments)
+
+
+on :: (DOM.IsEvent e, DOM.IsEventTarget t) => t -> EventName t e -> (e -> IO ()) -> IO (IO ())
+on elem eventName handler = EventM.on elem eventName (do e <- ask ; liftIO (handler e))
 
 debugPrint :: Show a => a -> IO ()
 
@@ -989,10 +998,13 @@ initHappstackAuthenticateClient baseURL mTurnstileKey sps =
                                 atomically $ modifyTVar' modelTV $  \m -> m { _turnstileToken = Just (textFromJSString token) }
 
                        case mTurnstileKey of
-                         Nothing -> pure ()
+                         Nothing ->
+                           do debugStrLn "turnstile not enabled because no turnskile key was found."
                          (Just siteKey) ->
                            do tId <- turnstileRender "#cf-turnstile-widget" siteKey addTurnstileToken
+                              debugStrLn "called turnstileRender"
                               pure ()
+
                        pure update
 --                     addEventListener newNode (ev @Click) (logoutHandler (\url -> baseURL <> toPathInfo url) update modelTV) False
                      -- listen for changes to local storage

@@ -61,7 +61,7 @@ Library
   ghc-options:         -Werror=incomplete-patterns
   hs-source-dirs:      src
   if flag(Debug)
-    cpp-options: "-DDEBUG_CLIENT"
+    cpp-options: "-DDEBUG"
 
   Exposed-modules:
                         Happstack.Authenticate.Core
@@ -132,6 +132,8 @@ Library
 
 executable happstack-authenticate-client
   import: shared-ghcjs-properties
+  if flag(Debug)
+    cpp-options: "-DDEBUG"
   if impl(ghcjs)
     buildable: True
   else
