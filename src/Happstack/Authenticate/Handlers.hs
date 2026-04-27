@@ -164,8 +164,6 @@ data AuthenticateState_1 = AuthenticateState_1
     , _newAccountMode_1            :: NewAccountMode
     }
     deriving (Eq, Show, Typeable, Generic)
-deriveSafeCopy 1 'base ''AuthenticateState_1
-makeLenses ''AuthenticateState_1
 
 data AuthenticateState = AuthenticateState
     { _sharedSecrets             :: SharedSecrets
@@ -176,12 +174,16 @@ data AuthenticateState = AuthenticateState
     , _turnstile                 :: Maybe Turnstile
     }
     deriving (Eq, Show, Typeable, Generic)
-deriveSafeCopy 2 'extension ''AuthenticateState
-makeLenses ''AuthenticateState
 
 instance SafeCopy AuthenticateState_1 => Migrate AuthenticateState where
   type MigrateFrom AuthenticateState = AuthenticateState_1
   migrate (AuthenticateState_1 ss us nui dst nam) = AuthenticateState ss us nui dst nam Nothing
+
+deriveSafeCopy 1 'base ''AuthenticateState_1
+makeLenses ''AuthenticateState_1
+
+deriveSafeCopy 2 'extension ''AuthenticateState
+makeLenses ''AuthenticateState
 
 -- | a reasonable initial 'AuthenticateState'
 initialAuthenticateState :: AuthenticateState
