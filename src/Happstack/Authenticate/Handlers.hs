@@ -179,7 +179,7 @@ data AuthenticateState = AuthenticateState
 deriveSafeCopy 2 'extension ''AuthenticateState
 makeLenses ''AuthenticateState
 
-instance Migrate AuthenticateState where 
+instance SafeCopy AuthenticateState_1 => Migrate AuthenticateState where
   type MigrateFrom AuthenticateState = AuthenticateState_1
   migrate (AuthenticateState_1 ss us nui dst nam) = AuthenticateState ss us nui dst nam Nothing
 
