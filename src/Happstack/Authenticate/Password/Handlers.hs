@@ -172,9 +172,15 @@ verifyTurnstileToken :: Text -> Maybe Text -> IO (Either (Maybe Value) ())
 verifyTurnstileToken _ Nothing = pure (Left Nothing)
 verifyTurnstileToken secret (Just token) =
   do initReq <- parseRequest "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+#if MIN_VERSION_aeson(2,0,0)
+     let reqJson = Object (KM.fromList [ ( "secret", String secret)
+                                       , ("response", String token)
+                                       ])
+#else
      let reqJson = Object (HashMap.fromList [ ( "secret", String secret)
                                             , ("response", String token)
                                             ])
+#endif
          req = setRequestMethod "POST" $
                setRequestBodyJSON reqJson $
                initReq
@@ -183,7 +189,11 @@ verifyTurnstileToken secret (Just token) =
      -- liftIO $ print resp
      case json of
        (Object obj) ->
+#if MIN_VERSION_aeson(2,0,0)
+         case KM.lookup "success" obj of
+#else
          case HashMap.lookup "success" obj of
+#endif
            Nothing -> pure (Left (Just json))
            (Just success) | success == (Bool True)   -> pure (Right ())
                           | otherwise -> pure (Left (Just json))
@@ -465,8 +475,3 @@ decodeAndVerifyResetToken authenticateState token =
                                    if (now > secondsSinceEpoch exp')
                                    then pure $ Left ExpiredResetToken
                                    else pure $ Right (u, verified)
-
-
-
-
-
