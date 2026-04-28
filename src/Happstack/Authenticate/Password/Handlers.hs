@@ -20,7 +20,11 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as B
 import Data.Data (Data, Typeable)
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap as HashMap
+#else
 import qualified Data.HashMap.Strict as HashMap
+#endif
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe         (fromMaybe, fromJust)
