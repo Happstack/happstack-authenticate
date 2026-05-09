@@ -61,7 +61,7 @@ import GHCJS.DOM.Document              (setCookie)
 import GHCJS.DOM.EventM (EventName, EventM)
 import qualified GHCJS.DOM.EventM as EventM
 import qualified GHCJS.DOM.GlobalEventHandlers as DOM (load)
-import GHCJS.DOM.Location              (Location, getSearch, setHref)
+import GHCJS.DOM.Location              (Location, getSearch, reload, setHref)
 import qualified GHCJS.DOM.URLSearchParams as Search
 import GHCJS.DOM.Window                (getLocalStorage, getLocation)
 import GHCJS.DOM.Storage               (Storage, getItem, removeItem, setItem)
@@ -533,6 +533,9 @@ logoutHandler routeFn update modelTV e =
                        do debugStrLn $  "logoutHandler - logout"
                           (Just d) <- GHCJS.currentDocument
                           clearUser routeFn modelTV
+                          (Just w) <- GHCJS.currentWindow
+                          location <- getLocation w
+                          reload location
                      _ ->
                        do debugStrLn $ "unknown action - " ++ show action
        Nothing -> do debugStrLn "target is not an element"
